@@ -9,4 +9,5 @@ edition = "2018"
 [dependencies]
 rdev = "0.5.1"
 gtk = "0.14.0"
+ggez = "0.6.0"
 
