@@ -1,5 +1,5 @@
 use rdev::{listen, simulate, Event, EventType, SimulateError, Key};
-use std::{thread, time, time::SystemTime, sync::Arc, sync::Mutex, sync::mpsc::channel};
+use std::{thread, time, time::SystemTime, time::Duration, sync::Arc, sync::Mutex, sync::mpsc::channel};
 
 fn main() {
     // spawn new thread because listen blocks
@@ -18,16 +18,27 @@ fn main() {
 
     let events_ref = Arc::clone(&events);
     let record_ref = Arc::clone(&record);
+    let run_ref = Arc::clone(&run);
     thread::spawn(move || {
         for event in recvch.iter() {
-            // println!("Received {:?}", event.event_type);
             let mut record_ref = record_ref.lock().unwrap();
+            let mut run_ref = run_ref.lock().unwrap();
             if event.event_type == EventType::KeyRelease(Key::F10) {
                 *record_ref = !*record_ref;
                 if *record_ref {
                     println!("Recording...");
+                    events_ref.lock().unwrap().clear();
                 } else {
                     println!("Stopped recording...");
+                }
+            }
+
+            if event.event_type == EventType::KeyRelease(Key::F12) {
+                *run_ref = !*run_ref;
+                if *run_ref && !*record_ref {
+                    println!("Running...");
+                } else if !*run_ref {
+                    println!("Stopped running...");
                 }
             }
 
@@ -39,30 +50,37 @@ fn main() {
 
     loop {
         let record = record.lock().unwrap();
-        let mut run = run.lock().unwrap();
-        let mut events = events.lock().unwrap();
+        let mut run_val = run.lock().unwrap();
 
-        if *run && !*record {
-            send_events(events.to_vec());
-            *run = false;
+        if *run_val && !*record {
+            let events_ref = Arc::clone(&events);
+            let run_ref = Arc::clone(&run);
+            thread::spawn(move || {
+                send_events(events_ref, run_ref);
+            });
         }
-
-        for event in events.to_vec() {
-            if *record {
-                println!("{:?}", event.event_type);
-            }
-        }
-        events.clear();
     };
 }
 
-fn send_events(events: Vec<Event>) {
-    let wait_duration = SystemTime::now();
+fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
+    let events = events.lock().unwrap().to_vec();
+    let mut last_time = events[0].time;
+    let mut wait_duration = Duration::new(0,0);
+    let mut run = run.lock().unwrap();
     for event in events {
-        send_event(&event.event_type);
-        let wait_duration = event.time.duration_since(wait_duration);
-        thread::sleep(wait_duration.unwrap());
+        // Running can be disabled while in the middle of running so we have to check if flag is still true
+        if *run {
+            send_event(&event.event_type);
+            wait_duration = event.time.duration_since(last_time).unwrap();
+            last_time = event.time;
+            println!("{:?}", wait_duration);
+            thread::sleep(wait_duration);
+        } else {
+            println!("Running halted!");
+            break;
+        }
     }
+    *run = false;
 }
 
 fn send_event(event_type: &EventType) {
