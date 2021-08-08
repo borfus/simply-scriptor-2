@@ -1,5 +1,5 @@
 use rdev::{listen, simulate, Event, EventType, SimulateError, Key};
-use std::{thread, time, time::SystemTime, time::Duration, sync::Arc, sync::Mutex, sync::mpsc::channel};
+use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel};
 
 fn main() {
     // spawn new thread because listen blocks
@@ -50,7 +50,7 @@ fn main() {
 
     loop {
         let record = record.lock().unwrap();
-        let mut run_val = run.lock().unwrap();
+        let run_val = run.lock().unwrap();
 
         if *run_val && !*record {
             let events_ref = Arc::clone(&events);
@@ -65,15 +65,13 @@ fn main() {
 fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
     let events = events.lock().unwrap().to_vec();
     let mut last_time = events[0].time;
-    let mut wait_duration = Duration::new(0,0);
     let mut run = run.lock().unwrap();
     for event in events {
         // Running can be disabled while in the middle of running so we have to check if flag is still true
         if *run {
             send_event(&event.event_type);
-            wait_duration = event.time.duration_since(last_time).unwrap();
+            let wait_duration = event.time.duration_since(last_time).unwrap();
             last_time = event.time;
-            println!("{:?}", wait_duration);
             thread::sleep(wait_duration);
         } else {
             println!("Running halted!");
@@ -84,14 +82,11 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
 }
 
 fn send_event(event_type: &EventType) {
-    let delay = time::Duration::from_millis(20);
     match simulate(event_type) {
         Ok(()) => (),
         Err(SimulateError) => {
             eprintln!("Could not send event: {:?}", event_type);
         }
     }
-
-    thread::sleep(delay);
 }
 
