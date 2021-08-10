@@ -1,4 +1,4 @@
-use rdev::Event;
+use rdev::{simulate, SimulateError, Event, EventType, Key};
 use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel};
 use simply_scriptor::*;
 
@@ -51,6 +51,14 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
             break;
         }
     }
+    
+    // Send release key event for stop recording button
+    match simulate(&EventType::KeyRelease(Key::F10)) {
+        Ok(()) => (),
+        Err(SimulateError) => {
+            eprintln!("Could not send final release key.");
+        }
+    };
     *run = false;
 }
 
