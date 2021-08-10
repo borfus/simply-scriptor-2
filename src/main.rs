@@ -48,7 +48,7 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
             if wait_duration.as_millis() > 5 {
                 thread::sleep(wait_duration);
             } else {
-                let asd = Duration::from_nanos(1);
+                let asd = Duration::from_millis(1);
                 println!("{:?}", asd);
                 thread::sleep(asd);
             }
