@@ -16,7 +16,7 @@ pub fn spawn_event_receiver(recvch: Receiver<Event>, record: Arc<Mutex<bool>>, r
         for event in recvch.iter() {
             let mut record = record.lock().unwrap();
             let mut run = run.lock().unwrap();
-            if event.event_type == EventType::KeyRelease(Key::F9) {
+            if event.event_type == EventType::KeyRelease(Key::Comma) {
                 if !*record {
                     *record = true;
                     println!("Recording...");
@@ -25,7 +25,7 @@ pub fn spawn_event_receiver(recvch: Receiver<Event>, record: Arc<Mutex<bool>>, r
                 }
             }
 
-            if event.event_type == EventType::KeyRelease(Key::F10) {
+            if event.event_type == EventType::KeyRelease(Key::Dot) {
                 if *record {
                     *record = false;
                     println!("Stopped recording...");
@@ -33,7 +33,7 @@ pub fn spawn_event_receiver(recvch: Receiver<Event>, record: Arc<Mutex<bool>>, r
                 }
             }
 
-            if event.event_type == EventType::KeyRelease(Key::F12) {
+            if event.event_type == EventType::KeyRelease(Key::Slash) {
                 println!("F12 detected!");
                 if !*run && !*record {
                     println!("Running...");

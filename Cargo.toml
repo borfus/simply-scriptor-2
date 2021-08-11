@@ -10,4 +10,5 @@ edition = "2018"
 rdev = "0.5.1"
 gtk = "0.14.0"
 ggez = "0.6.0"
+spin_sleep = "1.0.0"
 

@@ -1,5 +1,5 @@
 use rdev::{simulate, SimulateError, Event, EventType, Key};
-use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration};
+use std::{sync::Arc, sync::Mutex, sync::mpsc::channel};
 use simply_scriptor::*;
 
 fn main() {
@@ -44,14 +44,7 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
             send_event(&event.event_type);
             let wait_duration = event.time.duration_since(last_time).unwrap();
             last_time = event.time;
-            // println!("{:?}", wait_duration);
-            if wait_duration.as_millis() > 5 {
-                thread::sleep(wait_duration);
-            } else {
-                let asd = Duration::from_millis(1);
-                println!("{:?}", asd);
-                thread::sleep(asd);
-            }
+            spin_sleep::sleep(wait_duration);
         } else {
             println!("Running halted!");
             break;
