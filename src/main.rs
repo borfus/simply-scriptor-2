@@ -56,19 +56,19 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
             }
         }
 
+        // Send release key event for stop recording button
+        match simulate(&EventType::KeyRelease(Key::Dot)) {
+            Ok(()) => (),
+            Err(SimulateError) => {
+                eprintln!("Could not send final release key.");
+            }
+        };
+
         if !should_loop {
             break;
         }
     }
     
-    // Send release key event for stop recording button
-    match simulate(&EventType::KeyRelease(Key::Dot)) {
-        Ok(()) => (),
-        Err(SimulateError) => {
-            eprintln!("Could not send final release key.");
-        }
-    };
-
     let mut run = run.lock().unwrap();
     *run = false;
 
