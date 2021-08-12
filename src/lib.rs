@@ -34,7 +34,6 @@ pub fn spawn_event_receiver(recvch: Receiver<Event>, record: Arc<Mutex<bool>>, r
             }
 
             if event.event_type == EventType::KeyRelease(Key::Slash) {
-                println!("F12 detected!");
                 if !*run && !*record {
                     println!("Running...");
                     *run = true;
@@ -51,9 +50,6 @@ pub fn spawn_event_receiver(recvch: Receiver<Event>, record: Arc<Mutex<bool>>, r
         }
     });
 }
-
-// fn determine_action_state() {
-// }
 
 pub fn send_event(event_type: &EventType) {
     match simulate(event_type) {

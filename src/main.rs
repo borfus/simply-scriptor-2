@@ -16,10 +16,9 @@ fn main() {
     spawn_event_receiver(recvch, record_ref, run_ref, events_ref);
 
     loop {
-        let record_val = record.lock().unwrap();
         let run_val = run.lock().unwrap();
 
-        if *run_val && !*record_val {
+        if *run_val {
             drop(run_val);
             let events_ref = Arc::clone(&events);
             let run_ref = Arc::clone(&run);
@@ -30,34 +29,47 @@ fn main() {
 
 fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
     let events = events.lock().unwrap().to_vec();
-    let mut run = run.lock().unwrap();
     if events.len() == 0 {
         println!("There aren't any events to run!");
+        let mut run = run.lock().unwrap();
         *run = false;
         return;
     }
 
-    let mut last_time = events[0].time;
-    for event in events {
-        // Running can be disabled while in the middle of running so we have to check if flag is still true
-        if *run {
-            send_event(&event.event_type);
-            let wait_duration = event.time.duration_since(last_time).unwrap();
-            last_time = event.time;
-            spin_sleep::sleep(wait_duration);
-        } else {
-            println!("Running halted!");
+    let mut should_loop = true;
+    loop {
+        let mut last_time = events[0].time;
+        for event in &events {
+            // Running can be disabled while in the middle of running so we have to check if flag is still true
+            let run_ref = Arc::clone(&run);
+            let run_ref = run_ref.lock().unwrap();
+            if *run_ref {
+                send_event(&event.event_type);
+                let wait_duration = event.time.duration_since(last_time).unwrap();
+                last_time = event.time;
+                drop(run_ref);
+                spin_sleep::sleep(wait_duration);
+            } else {
+                println!("Running halted!");
+                should_loop = false;
+                break;
+            }
+        }
+
+        if !should_loop {
             break;
         }
     }
     
     // Send release key event for stop recording button
-    match simulate(&EventType::KeyRelease(Key::F10)) {
+    match simulate(&EventType::KeyRelease(Key::Dot)) {
         Ok(()) => (),
         Err(SimulateError) => {
             eprintln!("Could not send final release key.");
         }
     };
+
+    let mut run = run.lock().unwrap();
     *run = false;
 
     println!("Done");
