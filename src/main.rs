@@ -36,8 +36,10 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
         return;
     }
 
-    let mut should_loop = true;
-    loop {
+    let mut infinite_loop = false;
+    let loop_count = 1;
+    let mut i = 0;
+    while i < loop_count {
         let mut last_time = events[0].time;
         for event in &events {
             // Running can be disabled while in the middle of running so we have to check if flag is still true
@@ -51,7 +53,7 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
                 spin_sleep::sleep(wait_duration);
             } else {
                 println!("Running halted!");
-                should_loop = false;
+                infinite_loop = false;
                 break;
             }
         }
@@ -64,8 +66,8 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>) {
             }
         };
 
-        if !should_loop {
-            break;
+        if !infinite_loop {
+            i += 1;
         }
     }
     
