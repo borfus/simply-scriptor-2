@@ -129,7 +129,7 @@
             <property name="wrap">True</property>
             <property name="xalign">0</property>
             <attributes>
-              <attribute name="font-desc" value="Fira Mono Medium 12"/>
+              <attribute name="font-desc" value="Fira Mono Medium 10"/>
             </attributes>
           </object>
           <packing>
