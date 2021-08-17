@@ -103,8 +103,8 @@
         </child>
         <child>
           <object class="GtkLabel" id="label_script">
-            <property name="width-request">34</property>
-            <property name="height-request">24</property>
+            <property name="width-request">37</property>
+            <property name="height-request">25</property>
             <property name="visible">True</property>
             <property name="can-focus">False</property>
             <property name="halign">start</property>
@@ -120,7 +120,7 @@
         <child>
           <object class="GtkLabel" id="label_script_file">
             <property name="width-request">100</property>
-            <property name="height-request">24</property>
+            <property name="height-request">26</property>
             <property name="visible">True</property>
             <property name="can-focus">False</property>
             <property name="halign">start</property>
@@ -128,9 +128,12 @@
             <property name="label" translatable="yes">new</property>
             <property name="wrap">True</property>
             <property name="xalign">0</property>
+            <attributes>
+              <attribute name="font-desc" value="Fira Mono Medium 12"/>
+            </attributes>
           </object>
           <packing>
-            <property name="x">42</property>
+            <property name="x">45</property>
           </packing>
         </child>
       </object>
