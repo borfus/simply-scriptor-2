@@ -136,11 +136,13 @@
             <property name="can-focus">False</property>
             <property name="halign">start</property>
             <property name="valign">center</property>
+            <property name="margin-bottom">9</property>
             <property name="label" translatable="yes">new</property>
             <property name="wrap">True</property>
             <property name="xalign">0</property>
+            <property name="yalign">0.699999988079071</property>
             <attributes>
-              <attribute name="font-desc" value="Fira Mono Medium 10"/>
+              <attribute name="font-desc" value="Nimbus Mono PS Bold 14"/>
             </attributes>
           </object>
           <packing>
