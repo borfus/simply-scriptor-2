@@ -150,7 +150,6 @@
         <child>
           <object class="GtkCheckButton" id="checkbox_infinite">
             <property name="label" translatable="yes">Infinite Loop</property>
-            <property name="related-action"/>
             <property name="width-request">100</property>
             <property name="height-request">32</property>
             <property name="visible">True</property>
