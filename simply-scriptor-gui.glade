@@ -2,6 +2,14 @@
 <!-- Generated with glade 3.38.2 -->
 <interface>
   <requires lib="gtk+" version="3.24"/>
+  <object class="GtkTextBuffer" id="log_buffer"/>
+  <object class="GtkAdjustment" id="loop_count_adjustment">
+    <property name="lower">1</property>
+    <property name="upper">99999999</property>
+    <property name="value">1</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">10</property>
+  </object>
   <object class="GtkWindow" id="window">
     <property name="width-request">420</property>
     <property name="height-request">300</property>
@@ -64,8 +72,11 @@
             <property name="height-request">270</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
+            <property name="wrap-mode">word-char</property>
             <property name="cursor-visible">False</property>
+            <property name="buffer">log_buffer</property>
             <property name="accepts-tab">False</property>
+            <property name="input-purpose">terminal</property>
             <property name="monospace">True</property>
           </object>
           <packing>
@@ -134,6 +145,39 @@
           </object>
           <packing>
             <property name="x">45</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkCheckButton" id="checkbox_infinite">
+            <property name="label" translatable="yes">Infinite Loop</property>
+            <property name="related-action"/>
+            <property name="width-request">100</property>
+            <property name="height-request">32</property>
+            <property name="visible">True</property>
+            <property name="can-focus">True</property>
+            <property name="receives-default">False</property>
+            <property name="draw-indicator">True</property>
+          </object>
+          <packing>
+            <property name="x">295</property>
+            <property name="y">105</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkSpinButton" id="loop_count">
+            <property name="width-request">140</property>
+            <property name="height-request">34</property>
+            <property name="visible">True</property>
+            <property name="can-focus">True</property>
+            <property name="max-length">8</property>
+            <property name="input-purpose">digits</property>
+            <property name="adjustment">loop_count_adjustment</property>
+            <property name="climb-rate">1</property>
+            <property name="numeric">True</property>
+          </object>
+          <packing>
+            <property name="x">275</property>
+            <property name="y">135</property>
           </packing>
         </child>
       </object>
