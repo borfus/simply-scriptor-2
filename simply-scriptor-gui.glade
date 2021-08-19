@@ -17,7 +17,7 @@
     <property name="title" translatable="yes">Simply Scriptor 2</property>
     <property name="resizable">False</property>
     <property name="default-width">420</property>
-    <property name="default-height">300</property>
+    <property name="default-height">315</property>
     <child>
       <object class="GtkFixed" id="fixed">
         <property name="width-request">420</property>
@@ -35,7 +35,7 @@
           </object>
           <packing>
             <property name="x">275</property>
-            <property name="y">180</property>
+            <property name="y">200</property>
           </packing>
         </child>
         <child>
@@ -49,7 +49,7 @@
           </object>
           <packing>
             <property name="x">275</property>
-            <property name="y">260</property>
+            <property name="y">280</property>
           </packing>
         </child>
         <child>
@@ -63,13 +63,13 @@
           </object>
           <packing>
             <property name="x">275</property>
-            <property name="y">220</property>
+            <property name="y">240</property>
           </packing>
         </child>
         <child>
           <object class="GtkTextView" id="log">
             <property name="width-request">266</property>
-            <property name="height-request">270</property>
+            <property name="height-request">289</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <property name="wrap-mode">word-char</property>
@@ -136,14 +136,10 @@
             <property name="can-focus">False</property>
             <property name="halign">start</property>
             <property name="valign">center</property>
-            <property name="margin-bottom">9</property>
             <property name="label" translatable="yes">new</property>
             <property name="wrap">True</property>
             <property name="xalign">0</property>
-            <property name="yalign">0.699999988079071</property>
-            <attributes>
-              <attribute name="font-desc" value="Nimbus Mono PS Bold 14"/>
-            </attributes>
+            <property name="yalign">0.5</property>
           </object>
           <packing>
             <property name="x">45</property>
@@ -160,13 +156,13 @@
             <property name="draw-indicator">True</property>
           </object>
           <packing>
-            <property name="x">295</property>
-            <property name="y">105</property>
+            <property name="x">300</property>
+            <property name="y">100</property>
           </packing>
         </child>
         <child>
           <object class="GtkSpinButton" id="loop_count">
-            <property name="width-request">140</property>
+            <property name="width-request">142</property>
             <property name="height-request">34</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
@@ -178,7 +174,20 @@
           </object>
           <packing>
             <property name="x">275</property>
-            <property name="y">135</property>
+            <property name="y">155</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="label_loop_count">
+            <property name="width-request">68</property>
+            <property name="height-request">24</property>
+            <property name="visible">True</property>
+            <property name="can-focus">False</property>
+            <property name="label" translatable="yes">Loop Count:</property>
+          </object>
+          <packing>
+            <property name="x">275</property>
+            <property name="y">130</property>
           </packing>
         </child>
       </object>
