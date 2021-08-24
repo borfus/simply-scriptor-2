@@ -40,8 +40,8 @@ pub fn spawn_event_receiver(recvch: Receiver<Event>, record: Arc<Mutex<bool>>, r
                 } else if *run {
                     println!("Stopped running...");
                     *run = false;
-                    continue;
                 }
+                continue;
             }
 
             if *record && !*run {

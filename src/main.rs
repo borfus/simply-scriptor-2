@@ -1,6 +1,6 @@
 use rdev::{simulate, SimulateError, Event, EventType, Key};
 use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel};
-use simply_scriptor::*;
+use simply_scriptor_2::*;
 use gtk::prelude::*;
 
 fn main() {
@@ -49,11 +49,13 @@ fn main() {
 
         let record_button : gtk::Button = builder.object("button_record").expect("Couldn't get gtk object 'button_record'");
         let record_ref = Arc::clone(&record);
+        let events_ref = Arc::clone(&events);
         record_button.connect_clicked(move |_| {
             let mut record_val = record_ref.lock().unwrap();
             if !*record_val {
                 println!("Recording...");
                 *record_val = true;
+                events_ref.lock().unwrap().clear();
             }
         });
 
@@ -89,6 +91,9 @@ fn main() {
 
                 println!("Running...");
                 *run_val = true;
+            } else if *run_val {
+                println!("Stopped running...");
+                *run_val = false;
             }
         });
 
