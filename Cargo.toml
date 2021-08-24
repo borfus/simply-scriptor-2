@@ -10,4 +10,5 @@ edition = "2018"
 rdev = "0.5.1"
 gtk = "0.14.1"
 spin_sleep = "1.0.0"
+chrono = "0.4.19"
 

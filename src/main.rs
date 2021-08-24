@@ -53,7 +53,7 @@ fn main() {
         record_button.connect_clicked(move |_| {
             let mut record_val = record_ref.lock().unwrap();
             if !*record_val {
-                println!("Recording...");
+                log("Recording...");
                 *record_val = true;
                 events_ref.lock().unwrap().clear();
             }
@@ -64,21 +64,19 @@ fn main() {
         stop_recording_button.connect_clicked(move |_| {
             let mut record_val = record_ref.lock().unwrap();
             if *record_val {
-                println!("Stopped recording...");
+                log("Stopped recording...");
                 *record_val = false;
             }
         });
 
         let run_button: gtk::Button = builder.object("button_run").expect("Couldn't get gtk object 'button_run'");
         let run_ref = Arc::clone(&run);
-        let record_ref = Arc::clone(&record);
         let loop_count_ref = Arc::clone(&loop_count);
         let infinite_loop_ref = Arc::clone(&infinite_loop);
         run_button.connect_clicked(move |_| {
             let mut run_val = run_ref.lock().unwrap();
-            let record_val = record_ref.lock().unwrap();
 
-            if !*run_val && !*record_val {
+            if !*run_val {
                 let infinite_loop_checkbox : gtk::CheckButton = builder.object("checkbox_infinite").expect("Couldn't get gtk object 'checkbox_infinite'");
                 let infinite_loop_checkbox_val = infinite_loop_checkbox.is_active();
                 let mut infinite_loop_val = infinite_loop_ref.lock().unwrap();
@@ -89,10 +87,10 @@ fn main() {
                 let mut loop_count_val = loop_count_ref.lock().unwrap();
                 *loop_count_val = loop_count_button_val;
 
-                println!("Running...");
+                log("Running...");
                 *run_val = true;
             } else if *run_val {
-                println!("Stopped running...");
+                log("Stopped running...");
                 *run_val = false;
             }
         });
@@ -106,7 +104,7 @@ fn main() {
 fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_loop: Arc<Mutex<bool>>, loop_count: Arc<Mutex<i32>>) {
     let events = events.lock().unwrap().to_vec();
     if events.len() == 0 {
-        println!("There aren't any events to run!");
+        log("There aren't any events to run!");
         let mut run = run.lock().unwrap();
         *run = false;
         return;
@@ -128,7 +126,7 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_l
                 drop(run_ref);
                 spin_sleep::sleep(wait_duration);
             } else {
-                println!("Running halted!");
+                log("Running halted!");
                 *infinite_loop = false;
                 break;
             }
@@ -150,6 +148,6 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_l
     let mut run = run.lock().unwrap();
     *run = false;
 
-    println!("Done");
+    log("Done");
 }
 
