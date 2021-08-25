@@ -1,5 +1,5 @@
 use rdev::{simulate, SimulateError, Event, EventType, Key};
-use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel};
+use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration};
 use simply_scriptor_2::*;
 use gtk::prelude::*;
 
@@ -12,6 +12,7 @@ fn main() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let infinite_loop = Arc::new(Mutex::new(false));
     let loop_count = Arc::new(Mutex::new(1));
+    let delay = Arc::new(Mutex::new(false));
 
     let record_ref = Arc::clone(&record);
     let run_ref = Arc::clone(&run);
@@ -22,6 +23,7 @@ fn main() {
     let events_ref = Arc::clone(&events);
     let infinite_loop_ref = Arc::clone(&infinite_loop);
     let loop_count_ref = Arc::clone(&loop_count);
+    let delay_ref = Arc::clone(&delay);
     thread::spawn(move || {
         loop {
             let run_val = run_ref.lock().unwrap();
@@ -32,7 +34,8 @@ fn main() {
                 let run_ref_clone = Arc::clone(&run_ref);
                 let infinite_loop_clone = Arc::clone(&infinite_loop_ref);
                 let loop_count_clone = Arc::clone(&loop_count_ref);
-                send_events(events_ref_clone, run_ref_clone, infinite_loop_clone, loop_count_clone);
+                let delay_ref_clone = Arc::clone(&delay_ref);
+                send_events(events_ref_clone, run_ref_clone, infinite_loop_clone, loop_count_clone, delay_ref_clone);
             }
         }
     });
@@ -50,7 +53,10 @@ fn main() {
         let record_button : gtk::Button = builder.object("button_record").expect("Couldn't get gtk object 'button_record'");
         let record_ref = Arc::clone(&record);
         let events_ref = Arc::clone(&events);
+        let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         record_button.connect_clicked(move |_| {
+            window_ref.iconify();
+
             let mut record_val = record_ref.lock().unwrap();
             if !*record_val {
                 log("Recording...");
@@ -73,7 +79,11 @@ fn main() {
         let run_ref = Arc::clone(&run);
         let loop_count_ref = Arc::clone(&loop_count);
         let infinite_loop_ref = Arc::clone(&infinite_loop);
+        let delay_ref = Arc::clone(&delay);
+        let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         run_button.connect_clicked(move |_| {
+            window_ref.iconify();
+
             let mut run_val = run_ref.lock().unwrap();
 
             if !*run_val {
@@ -81,6 +91,11 @@ fn main() {
                 let infinite_loop_checkbox_val = infinite_loop_checkbox.is_active();
                 let mut infinite_loop_val = infinite_loop_ref.lock().unwrap();
                 *infinite_loop_val = infinite_loop_checkbox_val;
+
+                let delay_checkbox : gtk::CheckButton = builder.object("checkbox_delay").expect("Couldn't get gtk object 'checkbox_delay'");
+                let delay_checkbox_val = delay_checkbox.is_active();
+                let mut delay_val = delay_ref.lock().unwrap();
+                *delay_val = delay_checkbox_val;
 
                 let loop_count_button : gtk::SpinButton = builder.object("loop_count").expect("Couldn't get gtk object 'loop_count'");
                 let loop_count_button_val = loop_count_button.value_as_int();
@@ -101,7 +116,7 @@ fn main() {
     app.run();
 }
 
-fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_loop: Arc<Mutex<bool>>, loop_count: Arc<Mutex<i32>>) {
+fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_loop: Arc<Mutex<bool>>, loop_count: Arc<Mutex<i32>>, delay: Arc<Mutex<bool>>) {
     let events = events.lock().unwrap().to_vec();
     if events.len() == 0 {
         log("There aren't any events to run!");
@@ -109,6 +124,8 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_l
         *run = false;
         return;
     }
+
+    let delay = delay.lock().unwrap();
 
     let mut infinite_loop = infinite_loop.lock().unwrap();
     let loop_count = loop_count.lock().unwrap();
@@ -124,7 +141,11 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_l
                 let wait_duration = event.time.duration_since(last_time).unwrap();
                 last_time = event.time;
                 drop(run_ref);
-                spin_sleep::sleep(wait_duration);
+                if *delay {
+                    spin_sleep::sleep(wait_duration);
+                } else {
+                    spin_sleep::sleep(Duration::from_micros(50));
+                }
             } else {
                 log("Running halted!");
                 *infinite_loop = false;
