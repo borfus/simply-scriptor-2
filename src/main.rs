@@ -12,7 +12,7 @@ fn main() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let infinite_loop = Arc::new(Mutex::new(false));
     let loop_count = Arc::new(Mutex::new(1));
-    let delay = Arc::new(Mutex::new(false));
+    let delay = Arc::new(Mutex::new(true));
 
     let record_ref = Arc::clone(&record);
     let run_ref = Arc::clone(&run);
@@ -55,6 +55,29 @@ fn main() {
         let events_ref = Arc::clone(&events);
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
+
+        let infinite_loop_ref = Arc::clone(&infinite_loop);
+        let infinite_loop_checkbox : gtk::CheckButton = builder.object("checkbox_infinite").expect("Couldn't get gtk object 'checkbox_infinite'");
+        infinite_loop_checkbox.connect_toggled(move |button| {
+            let mut infinite_loop_val = infinite_loop_ref.lock().unwrap();
+            *infinite_loop_val = button.is_active();
+        });
+
+        let delay_ref = Arc::clone(&delay);
+        let delay_checkbox : gtk::CheckButton = builder.object("checkbox_delay").expect("Couldn't get gtk object 'checkbox_delay'");
+        delay_checkbox.connect_toggled(move |button| {
+            let mut delay_val = delay_ref.lock().unwrap();
+            *delay_val = button.is_active();
+        });
+
+        let loop_count_ref = Arc::clone(&loop_count);
+        let loop_count_button : gtk::SpinButton = builder.object("loop_count").expect("Couldn't get gtk object 'loop_count'");
+        loop_count_button.connect_value_notify(move |button| {
+            let loop_count_button_val = button.value_as_int();
+            let mut loop_count_val = loop_count_ref.lock().unwrap();
+            *loop_count_val = loop_count_button_val;
+        });
+
         record_button.connect_clicked(move |_| {
             if minimize.is_active() {
                 window_ref.iconify();
@@ -80,9 +103,6 @@ fn main() {
 
         let run_button: gtk::Button = builder.object("button_run").expect("Couldn't get gtk object 'button_run'");
         let run_ref = Arc::clone(&run);
-        let loop_count_ref = Arc::clone(&loop_count);
-        let infinite_loop_ref = Arc::clone(&infinite_loop);
-        let delay_ref = Arc::clone(&delay);
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
         run_button.connect_clicked(move |_| {
@@ -91,23 +111,7 @@ fn main() {
             }
 
             let mut run_val = run_ref.lock().unwrap();
-
             if !*run_val {
-                let infinite_loop_checkbox : gtk::CheckButton = builder.object("checkbox_infinite").expect("Couldn't get gtk object 'checkbox_infinite'");
-                let infinite_loop_checkbox_val = infinite_loop_checkbox.is_active();
-                let mut infinite_loop_val = infinite_loop_ref.lock().unwrap();
-                *infinite_loop_val = infinite_loop_checkbox_val;
-
-                let delay_checkbox : gtk::CheckButton = builder.object("checkbox_delay").expect("Couldn't get gtk object 'checkbox_delay'");
-                let delay_checkbox_val = delay_checkbox.is_active();
-                let mut delay_val = delay_ref.lock().unwrap();
-                *delay_val = delay_checkbox_val;
-
-                let loop_count_button : gtk::SpinButton = builder.object("loop_count").expect("Couldn't get gtk object 'loop_count'");
-                let loop_count_button_val = loop_count_button.value_as_int();
-                let mut loop_count_val = loop_count_ref.lock().unwrap();
-                *loop_count_val = loop_count_button_val;
-
                 log("Running...");
                 *run_val = true;
             } else if *run_val {
