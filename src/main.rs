@@ -54,8 +54,11 @@ fn main() {
         let record_ref = Arc::clone(&record);
         let events_ref = Arc::clone(&events);
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
+        let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
         record_button.connect_clicked(move |_| {
-            window_ref.iconify();
+            if minimize.is_active() {
+                window_ref.iconify();
+            }
 
             let mut record_val = record_ref.lock().unwrap();
             if !*record_val {
@@ -81,8 +84,11 @@ fn main() {
         let infinite_loop_ref = Arc::clone(&infinite_loop);
         let delay_ref = Arc::clone(&delay);
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
+        let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
         run_button.connect_clicked(move |_| {
-            window_ref.iconify();
+            if minimize.is_active() {
+                window_ref.iconify();
+            }
 
             let mut run_val = run_ref.lock().unwrap();
 
