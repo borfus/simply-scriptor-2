@@ -13,11 +13,13 @@ fn main() {
     let infinite_loop = Arc::new(Mutex::new(false));
     let loop_count = Arc::new(Mutex::new(1));
     let delay = Arc::new(Mutex::new(true));
+    let halt_actions = Arc::new(Mutex::new(false));
 
     let record_ref = Arc::clone(&record);
     let run_ref = Arc::clone(&run);
     let events_ref = Arc::clone(&events);
-    spawn_event_receiver(recvch, record_ref, run_ref, events_ref);
+    let halt_actions_ref = Arc::clone(&halt_actions);
+    spawn_event_receiver(recvch, record_ref, run_ref, events_ref, halt_actions_ref);
 
     let run_ref = Arc::clone(&run);
     let events_ref = Arc::clone(&events);
@@ -53,8 +55,75 @@ fn main() {
         let record_button : gtk::Button = builder.object("button_record").expect("Couldn't get gtk object 'button_record'");
         let record_ref = Arc::clone(&record);
         let events_ref = Arc::clone(&events);
-        let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
+
+        let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
+        let open_button : gtk::Button = builder.object("button_open").expect("Couldn't get gtk object 'button_open'.");
+        let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
+        let halt_actions_ref = Arc::clone(&halt_actions);
+        open_button.connect_clicked(move |_| {
+            let dialog = gtk::FileChooserDialog::with_buttons(Some("Open Script"), Some(&window_ref), gtk::FileChooserAction::Open, &[("_Open", gtk::ResponseType::Accept), ("_Cancel", gtk::ResponseType::Cancel)]);
+            let script_file_label_clone = script_file_label.clone();
+
+            let halt_actions_ref_clone = Arc::clone(&halt_actions_ref);
+            let mut halt_actions_val = halt_actions_ref.lock().unwrap();
+            *halt_actions_val = true;
+            drop(halt_actions_val);
+            dialog.connect_response(move |dialog, response| {
+                if response == gtk::ResponseType::Cancel {
+                    dialog.emit_close();
+                }
+
+                if response == gtk::ResponseType::Accept {
+                    let file_text = String::from(dialog.file().unwrap().basename().unwrap().to_str().unwrap());
+                    if file_text.len() > 12 {
+                        script_file_label_clone.set_text(format!("{}...", &file_text[0..12]).as_str());
+                    } else {
+                        script_file_label_clone.set_text(file_text.as_str());
+                    }
+                    dialog.emit_close();
+                }
+
+                let mut halt_actions_val = halt_actions_ref_clone.lock().unwrap();
+                *halt_actions_val = false;
+            });
+
+            dialog.run();
+        });
+
+        let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
+        let save_button: gtk::Button = builder.object("button_save").expect("Couldn't get gtk object 'button_save'.");
+        let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
+        let halt_actions_ref = Arc::clone(&halt_actions);
+        save_button.connect_clicked(move |_| {
+            let dialog = gtk::FileChooserDialog::with_buttons(Some("Save Script"), Some(&window_ref), gtk::FileChooserAction::Save, &[("_Save", gtk::ResponseType::Accept), ("_Cancel", gtk::ResponseType::Cancel)]);
+            let script_file_label_clone = script_file_label.clone();
+
+            let halt_actions_ref_clone = Arc::clone(&halt_actions_ref);
+            let mut halt_actions_val = halt_actions_ref.lock().unwrap();
+            *halt_actions_val = true;
+            drop(halt_actions_val);
+            dialog.connect_response(move |dialog, response| {
+                if response == gtk::ResponseType::Cancel {
+                    dialog.emit_close();
+                }
+
+                if response == gtk::ResponseType::Accept {
+                    let file_text = String::from(dialog.file().unwrap().basename().unwrap().to_str().unwrap());
+                    if file_text.len() > 12 {
+                        script_file_label_clone.set_text(format!("{}...", &file_text[0..12]).as_str());
+                    } else {
+                        script_file_label_clone.set_text(file_text.as_str());
+                    }
+                    dialog.emit_close();
+                }
+
+                let mut halt_actions_val = halt_actions_ref_clone.lock().unwrap();
+                *halt_actions_val = false;
+            });
+
+            dialog.run();
+        });
 
         let infinite_loop_ref = Arc::clone(&infinite_loop);
         let infinite_loop_checkbox : gtk::CheckButton = builder.object("checkbox_infinite").expect("Couldn't get gtk object 'checkbox_infinite'");
@@ -78,6 +147,7 @@ fn main() {
             *loop_count_val = loop_count_button_val;
         });
 
+        let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         record_button.connect_clicked(move |_| {
             if minimize.is_active() {
                 window_ref.iconify();
