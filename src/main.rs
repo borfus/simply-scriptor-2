@@ -75,11 +75,11 @@ fn main() {
                 }
 
                 if response == gtk::ResponseType::Accept {
-                    let file_text = String::from(dialog.file().unwrap().basename().unwrap().to_str().unwrap());
-                    if file_text.len() > 12 {
-                        script_file_label_clone.set_text(format!("{}...", &file_text[0..12]).as_str());
+                    let file_name = String::from(dialog.file().unwrap().basename().unwrap().to_str().unwrap());
+                    if file_name.len() > 12 {
+                        script_file_label_clone.set_text(format!("{}...", &file_name[0..12]).as_str());
                     } else {
-                        script_file_label_clone.set_text(file_text.as_str());
+                        script_file_label_clone.set_text(file_name.as_str());
                     }
                     dialog.emit_close();
                 }
@@ -148,6 +148,7 @@ fn main() {
         });
 
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
+        let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
         record_button.connect_clicked(move |_| {
             if minimize.is_active() {
                 window_ref.iconify();
@@ -155,6 +156,7 @@ fn main() {
 
             let mut record_val = record_ref.lock().unwrap();
             if !*record_val {
+                script_file_label.set_text("new");
                 log("Recording...");
                 *record_val = true;
                 events_ref.lock().unwrap().clear();

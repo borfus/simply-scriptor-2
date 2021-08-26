@@ -15,7 +15,13 @@ pub fn spawn_event_listener(sendch: Sender<Event>) {
     });
 }
 
-pub fn spawn_event_receiver(recvch: Receiver<Event>, record: Arc<Mutex<bool>>, run: Arc<Mutex<bool>>, events: Arc<Mutex<Vec<Event>>>, halt_actions: Arc<Mutex<bool>>) {
+pub fn spawn_event_receiver(
+    recvch: Receiver<Event>,
+    record: Arc<Mutex<bool>>,
+    run: Arc<Mutex<bool>>,
+    events: Arc<Mutex<Vec<Event>>>,
+    halt_actions: Arc<Mutex<bool>>
+) {
     thread::spawn(move || {
         for event in recvch.iter() {
             let halt_actions = halt_actions.lock().unwrap();
