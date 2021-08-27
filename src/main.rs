@@ -1,5 +1,5 @@
 use rdev::{simulate, SimulateError, Event, EventType, Key};
-use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration};
+use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration, fs::File, io::Write};
 use simply_scriptor_2::*;
 use gtk::prelude::*;
 
@@ -95,6 +95,7 @@ fn main() {
         let save_button: gtk::Button = builder.object("button_save").expect("Couldn't get gtk object 'button_save'.");
         let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
         let halt_actions_ref = Arc::clone(&halt_actions);
+        let _events_ref = Arc::clone(&events);
         save_button.connect_clicked(move |_| {
             let dialog = gtk::FileChooserDialog::with_buttons(Some("Save Script"), Some(&window_ref), gtk::FileChooserAction::Save, &[("_Save", gtk::ResponseType::Accept), ("_Cancel", gtk::ResponseType::Cancel)]);
             let script_file_label_clone = script_file_label.clone();
@@ -103,17 +104,28 @@ fn main() {
             let mut halt_actions_val = halt_actions_ref.lock().unwrap();
             *halt_actions_val = true;
             drop(halt_actions_val);
+            let events_ref_clone = Arc::clone(&events_ref);
             dialog.connect_response(move |dialog, response| {
                 if response == gtk::ResponseType::Cancel {
                     dialog.emit_close();
                 }
 
                 if response == gtk::ResponseType::Accept {
-                    let file_text = String::from(dialog.file().unwrap().basename().unwrap().to_str().unwrap());
-                    if file_text.len() > 12 {
-                        script_file_label_clone.set_text(format!("{}...", &file_text[0..12]).as_str());
+                    // serialize Event vector and save to .bin file
+                    let file_name = format!("{}.bin", dialog.file().unwrap().basename().unwrap().to_str().unwrap());
+                    let file_path = String::from(dialog.file().unwrap().parse_name().as_str());
+                    let file_path = format!("{}.bin", file_path);
+
+                    let mut file = File::create(&file_path[..]).unwrap();
+                    let events_ref_clone = events_ref_clone.lock().unwrap();
+                    let encoded: Vec<u8> = bincode::serialize(&*events_ref_clone).unwrap();
+                    let _result = file.write_all(&encoded);
+
+                    // set label text to file name
+                    if file_name.len() > 12 {
+                        script_file_label_clone.set_text(format!("{}...", &file_name[0..12]).as_str());
                     } else {
-                        script_file_label_clone.set_text(file_text.as_str());
+                        script_file_label_clone.set_text(file_name.as_str());
                     }
                     dialog.emit_close();
                 }
@@ -149,6 +161,7 @@ fn main() {
 
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
+        let events_ref = Arc::clone(&events);
         record_button.connect_clicked(move |_| {
             if minimize.is_active() {
                 window_ref.iconify();
