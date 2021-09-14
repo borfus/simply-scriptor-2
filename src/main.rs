@@ -2,6 +2,7 @@ use rdev::{simulate, SimulateError, Event, EventType, Key};
 use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration, fs::File, io::Write, io::Read};
 use simply_scriptor_2::*;
 use gtk::prelude::*;
+use gtk::traits::SettingsExt;
 
 fn main() {
     let (sendch, recvch) = channel();
@@ -41,6 +42,10 @@ fn main() {
             }
         }
     });
+
+    let _ = gtk::init();
+    let settings = gtk::Settings::default().unwrap();
+    settings.set_gtk_application_prefer_dark_theme(true);
 
     // Create gtk window
     let app = gtk::Application::builder()

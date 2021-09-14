@@ -129,7 +129,7 @@
         </child>
         <child>
           <object class="GtkSpinButton" id="loop_count">
-            <property name="width-request">142</property>
+            <property name="width-request">140</property>
             <property name="height-request">34</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
