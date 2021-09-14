@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 rdev = { version = "0.5.1", features=["serialize"] }
 gtk = "0.14.1"
+gdk = "0.14.2"
 spin_sleep = "1.0.0"
 chrono = "0.4.19"
 serde = "1.0.129"
