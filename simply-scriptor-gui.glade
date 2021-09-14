@@ -17,6 +17,7 @@
     <property name="resizable">False</property>
     <property name="default-width">420</property>
     <property name="default-height">320</property>
+    <property name="gravity">static</property>
     <child>
       <object class="GtkFixed" id="fixed">
         <property name="width-request">150</property>
