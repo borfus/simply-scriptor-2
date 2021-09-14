@@ -49,8 +49,6 @@ fn main() {
     let css = gtk::CssProvider::default().unwrap();
     let _ = css.load_from_path("share/themes/brown/gtk-3.0/gtk-dark.css");
 
-    // gtk::StyleContext::add_provider_for_screen(&gdk::Screen::default().unwrap(), &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
-
     // Create gtk window
     let app = gtk::Application::builder()
         .application_id("com.borfus.simply-scriptor-2")
