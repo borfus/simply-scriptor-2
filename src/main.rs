@@ -3,7 +3,7 @@
 use rdev::{simulate, SimulateError, Event, EventType, Key};
 use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration, fs::File, io::Write, io::Read};
 use gtk::{prelude::*, traits::SettingsExt};
-use simply_scriptor_2::*;
+use simplyscriptor2::*;
 
 fn main() {
     let (sendch, recvch) = channel();
