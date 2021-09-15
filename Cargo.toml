@@ -12,7 +12,7 @@ winres = "0.1"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rdev = { version = "0.5.1", features=["serialize"] }
+rdev = { version = "0.5.1", features=["serialize", "unstable_grab"] }
 gtk = "0.14.1"
 gdk = "0.14.2"
 spin_sleep = "1.0.0"
