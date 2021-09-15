@@ -25,7 +25,7 @@ There are a few additional options for recording and running scripts:
 Once you create a script, you have the option of saving it as a `.bin` file. You can also load previously saved script files to prevent the need to record the script each time SS2 is launched.
 
 # Download
-You can download the latest version of Simply Scriptor 2 for Linux, Windows, or macOS [here]().
+You can download the latest version of Simply Scriptor 2 for Linux, Windows, or macOS [here](https://github.com/borfus/simply-scriptor-2/releases/tag/0.2.0).
 
 # Current Version
 0.2.0
