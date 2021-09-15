@@ -19,5 +19,6 @@ bincode = "1.3.3"
 [package.metadata.bundle]
 name = "Simply Scriptor 2"
 identifier = "com.borfus.simplyscriptor2"
+icon = ["resource/icons/simply-scriptor-32x32.ico", "resource/icons/simply-scriptor-64x64.ico", "resource/icons/simply-scriptor-128x128.ico", "resource/icons/simply-scriptor-256x256.ico"]
 resources = ["share"]
 
