@@ -1,6 +1,6 @@
 use rdev::{simulate, SimulateError, Event, EventType, Key};
 use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration, fs::File, io::Write, io::Read};
-use gtk::prelude::*;
+use gtk::{prelude::*, traits::SettingsExt};
 use simply_scriptor_2::*;
 
 fn main() {
@@ -44,11 +44,8 @@ fn main() {
 
     let _ = gtk::init();
 
-    let css = gtk::CssProvider::default().unwrap();
-    let _ = css.load_from_path("share/themes/brown/gtk-3.0/gtk-dark.css");
-
-    gtk::StyleContext::remove_provider_for_screen(&gdk::Screen::default().unwrap(), &css);
-    gtk::StyleContext::add_provider_for_screen(&gdk::Screen::default().unwrap(), &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    let settings = gtk::Settings::default().unwrap();
+    settings.set_gtk_application_prefer_dark_theme(true);
 
     // Create gtk window
     let app = gtk::Application::builder()
