@@ -44,6 +44,11 @@ fn main() {
         }
     });
 
+    if cfg!(target_os = "macos") {
+        // GTK causes strange bugs in macos and until the bugs are sorted out, macos only get a command line tool
+        return;
+    }
+
     let _ = gtk::init();
 
     let settings = gtk::Settings::default().unwrap();
