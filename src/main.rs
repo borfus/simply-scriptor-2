@@ -28,7 +28,9 @@ fn main() {
     let infinite_loop_ref = Arc::clone(&infinite_loop);
     let loop_count_ref = Arc::clone(&loop_count);
     let delay_ref = Arc::clone(&delay);
-    thread::spawn(move || {
+
+    if cfg!(target_os = "macos") {
+        // GTK causes strange bugs in macos and until the bugs are sorted out, macos only get a command line tool
         loop {
             let run_val = run_ref.lock().unwrap();
 
@@ -42,11 +44,22 @@ fn main() {
                 send_events(events_ref_clone, run_ref_clone, infinite_loop_clone, loop_count_clone, delay_ref_clone);
             }
         }
-    });
+    } else {
+        thread::spawn(move || {
+            loop {
+                let run_val = run_ref.lock().unwrap();
 
-    if cfg!(target_os = "macos") {
-        // GTK causes strange bugs in macos and until the bugs are sorted out, macos only get a command line tool
-        return;
+                if *run_val {
+                    drop(run_val);
+                    let events_ref_clone = Arc::clone(&events_ref);
+                    let run_ref_clone = Arc::clone(&run_ref);
+                    let infinite_loop_clone = Arc::clone(&infinite_loop_ref);
+                    let loop_count_clone = Arc::clone(&loop_count_ref);
+                    let delay_ref_clone = Arc::clone(&delay_ref);
+                    send_events(events_ref_clone, run_ref_clone, infinite_loop_clone, loop_count_clone, delay_ref_clone);
+                }
+            }
+        });
     }
 
     let _ = gtk::init();
