@@ -1,6 +1,8 @@
 # Summary
 Simply Scriptor 2 is a general scripting program that records and simulates keyboard and mouse input. Simply Scriptor 2 runs on Windows, Linux, and Mac OS (through a more simplified, command line tool) and is made with Rust.
 
+<img src="resource/simply-scriptor-2.gif" width="700" height="700" />
+
 This project is a continuation of the older [Simply Scriptor](https://github.com/borfus/Simply-Scriptor) project originally made with C.
 
 Simply Scriptor 2 utilizes the [rdev](https://crates.io/crates/rdev) crate to capture and simulate keyboard and mouse events. [GTK](https://crates.io/crates/gtk) is used to provide a simple GUI as well as help provide a few additional features such as file saving/loading.
