@@ -29,36 +29,12 @@ fn main() {
     let loop_count_ref = Arc::clone(&loop_count);
     let delay_ref = Arc::clone(&delay);
 
+    // GTK causes strange bugs in macos and until the bugs are sorted out, macos only get a command line tool
     if cfg!(target_os = "macos") {
-        // GTK causes strange bugs in macos and until the bugs are sorted out, macos only get a command line tool
-        loop {
-            let run_val = run_ref.lock().unwrap();
-
-            if *run_val {
-                drop(run_val);
-                let events_ref_clone = Arc::clone(&events_ref);
-                let run_ref_clone = Arc::clone(&run_ref);
-                let infinite_loop_clone = Arc::clone(&infinite_loop_ref);
-                let loop_count_clone = Arc::clone(&loop_count_ref);
-                let delay_ref_clone = Arc::clone(&delay_ref);
-                send_events(events_ref_clone, run_ref_clone, infinite_loop_clone, loop_count_clone, delay_ref_clone);
-            }
-        }
+        event_loop(events_ref, run_ref, infinite_loop_ref, loop_count_ref, delay_ref);
     } else {
         thread::spawn(move || {
-            loop {
-                let run_val = run_ref.lock().unwrap();
-
-                if *run_val {
-                    drop(run_val);
-                    let events_ref_clone = Arc::clone(&events_ref);
-                    let run_ref_clone = Arc::clone(&run_ref);
-                    let infinite_loop_clone = Arc::clone(&infinite_loop_ref);
-                    let loop_count_clone = Arc::clone(&loop_count_ref);
-                    let delay_ref_clone = Arc::clone(&delay_ref);
-                    send_events(events_ref_clone, run_ref_clone, infinite_loop_clone, loop_count_clone, delay_ref_clone);
-                }
-            }
+            event_loop(events_ref, run_ref, infinite_loop_ref, loop_count_ref, delay_ref);
         });
     }
 
@@ -247,6 +223,22 @@ fn main() {
         window.show_all();
     });
     app.run();
+}
+
+fn event_loop(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_loop: Arc<Mutex<bool>>, loop_count: Arc<Mutex<i32>>, delay: Arc<Mutex<bool>>) {
+    loop {
+        let run_val = run.lock().unwrap();
+
+        if *run_val {
+            drop(run_val);
+            let events_ref = Arc::clone(&events);
+            let run_ref = Arc::clone(&run);
+            let infinite_loop_ref = Arc::clone(&infinite_loop);
+            let loop_count_ref = Arc::clone(&loop_count);
+            let delay_ref = Arc::clone(&delay);
+            send_events(events_ref, run_ref, infinite_loop_ref, loop_count_ref, delay_ref);
+        }
+    }
 }
 
 fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_loop: Arc<Mutex<bool>>, loop_count: Arc<Mutex<i32>>, delay: Arc<Mutex<bool>>) {
