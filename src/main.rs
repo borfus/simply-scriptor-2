@@ -29,7 +29,7 @@ fn main() {
     let loop_count_ref = Arc::clone(&loop_count);
     let delay_ref = Arc::clone(&delay);
 
-    // GTK causes strange bugs in macos and until the bugs are sorted out, macos only get a command line tool
+    // GTK causes strange bugs in macos and until the bugs are sorted out, macos only gets a command line tool
     if cfg!(target_os = "macos") {
         event_loop(events_ref, run_ref, infinite_loop_ref, loop_count_ref, delay_ref);
     } else {
