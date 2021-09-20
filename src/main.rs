@@ -247,7 +247,10 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<AtomicBool>, infinite_lo
                 last_time = event.time;
                 if delay.load(Ordering::Relaxed) {
                     let now = SystemTime::now();
-                    spin_sleep::sleep(wait_duration);
+                    let shorten_amount: u64 = 35;
+                    if wait_duration.as_micros() > shorten_amount.into() {
+                        spin_sleep::sleep(wait_duration - Duration::from_micros(shorten_amount));
+                    }
                     println!("elapsed time: {:?} - wait_duration: {:?}", now.elapsed().unwrap(), wait_duration);
                 } else {
                     spin_sleep::sleep(Duration::from_micros(50));
