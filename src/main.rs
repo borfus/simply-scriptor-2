@@ -1,7 +1,7 @@
-#![windows_subsystem = "windows"]
+//#![windows_subsystem = "windows"]
 
 use rdev::{simulate, SimulateError, Event, EventType, Key};
-use std::{thread, sync::Arc, sync::Mutex, sync::{atomic::{AtomicBool, Ordering}, mpsc::channel}, time::Duration, fs::File, io::Write, io::Read};
+use std::{thread, sync::Arc, sync::Mutex, sync::{atomic::{AtomicBool, Ordering}, mpsc::channel}, time::Duration, fs::File, io::Write, io::Read, time::*};
 use gtk::{prelude::*, traits::SettingsExt};
 use simplyscriptor2::*;
 
@@ -246,7 +246,9 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<AtomicBool>, infinite_lo
                 let wait_duration = event.time.duration_since(last_time).unwrap();
                 last_time = event.time;
                 if delay.load(Ordering::Relaxed) {
+                    let now = SystemTime::now();
                     spin_sleep::sleep(wait_duration);
+                    println!("elapsed time: {:?} - wait_duration: {:?}", now.elapsed().unwrap(), wait_duration);
                 } else {
                     spin_sleep::sleep(Duration::from_micros(50));
                 }
