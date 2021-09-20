@@ -1,5 +1,5 @@
 use rdev::{listen, Event, EventType, simulate, SimulateError, Key};
-use std::{thread, sync::mpsc::Sender, sync::mpsc::Receiver, sync::Arc, sync::Mutex, time::SystemTime};
+use std::{thread, sync::{mpsc::{Sender, Receiver}, Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::SystemTime};
 
 extern crate chrono;
 use chrono::offset::Utc;
@@ -17,49 +17,45 @@ pub fn spawn_event_listener(sendch: Sender<Event>) {
 
 pub fn spawn_event_receiver(
     recvch: Receiver<Event>,
-    record: Arc<Mutex<bool>>,
-    run: Arc<Mutex<bool>>,
+    record: Arc<AtomicBool>,
+    run: Arc<AtomicBool>,
     events: Arc<Mutex<Vec<Event>>>,
-    halt_actions: Arc<Mutex<bool>>
+    halt_actions: Arc<AtomicBool>
 ) {
     thread::spawn(move || {
         for event in recvch.iter() {
-            let halt_actions = halt_actions.lock().unwrap();
-            if *halt_actions {
+            // let halt_actions = halt_actions.lock().unwrap();
+            if halt_actions.load(Ordering::Relaxed) {
                 continue;
             }
 
-            let mut record = record.lock().unwrap();
-            let mut run = run.lock().unwrap();
-            if event.event_type == EventType::KeyRelease(Key::Comma) {
-                if !*record {
-                    *record = true;
-                    log("Recording...");
-                    events.lock().unwrap().clear();
-                    continue;
-                }
+            // let mut record = record.lock().unwrap();
+            // let mut run = run.lock().unwrap();
+            if event.event_type == EventType::KeyRelease(Key::Comma) && !record.load(Ordering::Relaxed) {
+                record.store(true, Ordering::Relaxed);
+                log("Recording...");
+                events.lock().unwrap().clear();
+                continue;
             }
 
-            if event.event_type == EventType::KeyRelease(Key::Dot) {
-                if *record {
-                    *record = false;
-                    log("Stopped recording...");
-                    continue;
-                }
+            if event.event_type == EventType::KeyRelease(Key::Dot) && record.load(Ordering::Relaxed) {
+                record.store(false, Ordering::Relaxed);
+                log("Stopped recording...");
+                continue;
             }
 
             if event.event_type == EventType::KeyRelease(Key::Slash) {
-                if !*run && !*record {
+                if !run.load(Ordering::Relaxed) && !record.load(Ordering::Relaxed) {
                     log("Running...");
-                    *run = true;
-                } else if *run {
+                    run.store(true, Ordering::Relaxed);
+                } else if run.load(Ordering::Relaxed) {
                     log("Stopped running...");
-                    *run = false;
+                    run.store(false, Ordering::Relaxed);
                 }
                 continue;
             }
 
-            if *record && !*run {
+            if record.load(Ordering::Relaxed) && !run.load(Ordering::Relaxed) {
                 events.lock().unwrap().push(event);
             }
         }

@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
 
 use rdev::{simulate, SimulateError, Event, EventType, Key};
-use std::{thread, sync::Arc, sync::Mutex, sync::mpsc::channel, time::Duration, fs::File, io::Write, io::Read};
+use std::{thread, sync::Arc, sync::Mutex, sync::{atomic::{AtomicBool, Ordering}, mpsc::channel}, time::Duration, fs::File, io::Write, io::Read};
 use gtk::{prelude::*, traits::SettingsExt};
 use simplyscriptor2::*;
 
@@ -9,13 +9,13 @@ fn main() {
     let (sendch, recvch) = channel();
     spawn_event_listener(sendch);
 
-    let record = Arc::new(Mutex::new(false));
-    let run = Arc::new(Mutex::new(false));
+    let record = Arc::new(AtomicBool::new(false));
+    let run = Arc::new(AtomicBool::new(false));
     let events = Arc::new(Mutex::new(Vec::new()));
-    let infinite_loop = Arc::new(Mutex::new(false));
+    let infinite_loop = Arc::new(AtomicBool::new(false));
     let loop_count = Arc::new(Mutex::new(1));
-    let delay = Arc::new(Mutex::new(true));
-    let halt_actions = Arc::new(Mutex::new(false));
+    let delay = Arc::new(AtomicBool::new(true));
+    let halt_actions = Arc::new(AtomicBool::new(false));
 
     let record_ref = Arc::clone(&record);
     let run_ref = Arc::clone(&run);
@@ -66,10 +66,8 @@ fn main() {
             let dialog = gtk::FileChooserDialog::with_buttons(Some("Open Script"), Some(&window_ref), gtk::FileChooserAction::Open, &[("_Open", gtk::ResponseType::Accept), ("_Cancel", gtk::ResponseType::Cancel)]);
             let script_file_label_clone = script_file_label.clone();
 
+            halt_actions_ref.store(true, Ordering::Relaxed);
             let halt_actions_ref_clone = Arc::clone(&halt_actions_ref);
-            let mut halt_actions_val = halt_actions_ref.lock().unwrap();
-            *halt_actions_val = true;
-            drop(halt_actions_val);
             let events_ref_clone = Arc::clone(&events_ref);
             dialog.connect_response(move |dialog, response| {
                 if response == gtk::ResponseType::Cancel {
@@ -99,8 +97,7 @@ fn main() {
                     dialog.emit_close();
                 }
 
-                let mut halt_actions_val = halt_actions_ref_clone.lock().unwrap();
-                *halt_actions_val = false;
+                halt_actions_ref_clone.store(false, Ordering::Relaxed);
             });
 
             dialog.run();
@@ -109,16 +106,14 @@ fn main() {
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         let save_button: gtk::Button = builder.object("button_save").expect("Couldn't get gtk object 'button_save'.");
         let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
-        let halt_actions_ref = Arc::clone(&halt_actions);
         let events_ref = Arc::clone(&events);
+        let halt_actions_ref = Arc::clone(&halt_actions);
         save_button.connect_clicked(move |_| {
             let dialog = gtk::FileChooserDialog::with_buttons(Some("Save Script"), Some(&window_ref), gtk::FileChooserAction::Save, &[("_Save", gtk::ResponseType::Accept), ("_Cancel", gtk::ResponseType::Cancel)]);
             let script_file_label_clone = script_file_label.clone();
 
+            halt_actions_ref.store(true, Ordering::Relaxed);
             let halt_actions_ref_clone = Arc::clone(&halt_actions_ref);
-            let mut halt_actions_val = halt_actions_ref.lock().unwrap();
-            *halt_actions_val = true;
-            drop(halt_actions_val);
             let events_ref_clone = Arc::clone(&events_ref);
             dialog.connect_response(move |dialog, response| {
                 if response == gtk::ResponseType::Cancel {
@@ -144,8 +139,7 @@ fn main() {
                     dialog.emit_close();
                 }
 
-                let mut halt_actions_val = halt_actions_ref_clone.lock().unwrap();
-                *halt_actions_val = false;
+                halt_actions_ref_clone.store(false, Ordering::Relaxed);
             });
 
             dialog.run();
@@ -154,15 +148,13 @@ fn main() {
         let infinite_loop_ref = Arc::clone(&infinite_loop);
         let infinite_loop_checkbox : gtk::CheckButton = builder.object("checkbox_infinite").expect("Couldn't get gtk object 'checkbox_infinite'");
         infinite_loop_checkbox.connect_toggled(move |button| {
-            let mut infinite_loop_val = infinite_loop_ref.lock().unwrap();
-            *infinite_loop_val = button.is_active();
+            infinite_loop_ref.store(button.is_active(), Ordering::Relaxed);
         });
 
         let delay_ref = Arc::clone(&delay);
         let delay_checkbox : gtk::CheckButton = builder.object("checkbox_delay").expect("Couldn't get gtk object 'checkbox_delay'");
         delay_checkbox.connect_toggled(move |button| {
-            let mut delay_val = delay_ref.lock().unwrap();
-            *delay_val = button.is_active();
+            delay_ref.store(button.is_active(), Ordering::Relaxed);
         });
 
         let loop_count_ref = Arc::clone(&loop_count);
@@ -181,11 +173,10 @@ fn main() {
                 window_ref.iconify();
             }
 
-            let mut record_val = record_ref.lock().unwrap();
-            if !*record_val {
+            if !record_ref.load(Ordering::Relaxed) {
                 script_file_label.set_text("new");
                 log("Recording...");
-                *record_val = true;
+                record_ref.store(true, Ordering::Relaxed);
                 events_ref.lock().unwrap().clear();
             }
         });
@@ -193,10 +184,9 @@ fn main() {
         let stop_recording_button : gtk::Button = builder.object("button_stop_recording").expect("Couldn't get gtk object 'button_stop_recording'");
         let record_ref = Arc::clone(&record);
         stop_recording_button.connect_clicked(move |_| {
-            let mut record_val = record_ref.lock().unwrap();
-            if *record_val {
+            if record_ref.load(Ordering::Relaxed) {
                 log("Stopped recording...");
-                *record_val = false;
+                record_ref.store(false, Ordering::Relaxed);
             }
         });
 
@@ -209,13 +199,12 @@ fn main() {
                 window_ref.iconify();
             }
 
-            let mut run_val = run_ref.lock().unwrap();
-            if !*run_val {
+            if !run_ref.load(Ordering::Relaxed) {
                 log("Running...");
-                *run_val = true;
-            } else if *run_val {
+                run_ref.store(true, Ordering::Relaxed);
+            } else if run_ref.load(Ordering::Relaxed) {
                 log("Stopped running...");
-                *run_val = false;
+                run_ref.store(false, Ordering::Relaxed);
             }
         });
 
@@ -225,12 +214,9 @@ fn main() {
     app.run();
 }
 
-fn event_loop(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_loop: Arc<Mutex<bool>>, loop_count: Arc<Mutex<i32>>, delay: Arc<Mutex<bool>>) {
+fn event_loop(events: Arc<Mutex<Vec<Event>>>, run: Arc<AtomicBool>, infinite_loop: Arc<AtomicBool>, loop_count: Arc<Mutex<i32>>, delay: Arc<AtomicBool>) {
     loop {
-        let run_val = run.lock().unwrap();
-
-        if *run_val {
-            drop(run_val);
+        if run.load(Ordering::Relaxed) {
             let events_ref = Arc::clone(&events);
             let run_ref = Arc::clone(&run);
             let infinite_loop_ref = Arc::clone(&infinite_loop);
@@ -241,39 +227,32 @@ fn event_loop(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_lo
     }
 }
 
-fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_loop: Arc<Mutex<bool>>, loop_count: Arc<Mutex<i32>>, delay: Arc<Mutex<bool>>) {
+fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<AtomicBool>, infinite_loop: Arc<AtomicBool>, loop_count: Arc<Mutex<i32>>, delay: Arc<AtomicBool>) {
     let events = events.lock().unwrap().to_vec();
-    if events.len() == 0 {
+    if events.is_empty() {
         log("There aren't any events to run!");
-        let mut run = run.lock().unwrap();
-        *run = false;
+        run.store(false, Ordering::Relaxed);
         return;
     }
 
-    let delay = delay.lock().unwrap();
-
-    let mut infinite_loop = infinite_loop.lock().unwrap();
     let loop_count = loop_count.lock().unwrap();
     let mut i = 0;
     while i < *loop_count {
         let mut last_time = events[0].time;
         for event in &events {
             // Running can be disabled while in the middle of running so we have to check if flag is still true
-            let run_ref = Arc::clone(&run);
-            let run_ref = run_ref.lock().unwrap();
-            if *run_ref {
+            if run.load(Ordering::Relaxed) {
                 send_event(&event.event_type);
                 let wait_duration = event.time.duration_since(last_time).unwrap();
                 last_time = event.time;
-                drop(run_ref);
-                if *delay {
+                if delay.load(Ordering::Relaxed) {
                     spin_sleep::sleep(wait_duration);
                 } else {
                     spin_sleep::sleep(Duration::from_micros(50));
                 }
             } else {
                 log("Running halted!");
-                *infinite_loop = false;
+                infinite_loop.store(false, Ordering::Relaxed);
                 break;
             }
         }
@@ -286,13 +265,12 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<Mutex<bool>>, infinite_l
             }
         };
         
-        if !*infinite_loop {
+        if !infinite_loop.load(Ordering::Relaxed) {
             i += 1;
         }
     }
     
-    let mut run = run.lock().unwrap();
-    *run = false;
+    run.store(false, Ordering::Relaxed);
 
     log("Done");
 }
