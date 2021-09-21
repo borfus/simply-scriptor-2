@@ -24,13 +24,10 @@ pub fn spawn_event_receiver(
 ) {
     thread::spawn(move || {
         for event in recvch.iter() {
-            // let halt_actions = halt_actions.lock().unwrap();
             if halt_actions.load(Ordering::Relaxed) {
                 continue;
             }
 
-            // let mut record = record.lock().unwrap();
-            // let mut run = run.lock().unwrap();
             if event.event_type == EventType::KeyRelease(Key::Comma) && !record.load(Ordering::Relaxed) {
                 record.store(true, Ordering::Relaxed);
                 log("Recording...");

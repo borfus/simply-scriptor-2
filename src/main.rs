@@ -1,7 +1,7 @@
-//#![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 use rdev::{simulate, SimulateError, Event, EventType, Key};
-use std::{thread, sync::Arc, sync::Mutex, sync::{atomic::{AtomicBool, Ordering}, mpsc::channel}, time::Duration, fs::File, io::Write, io::Read, time::*};
+use std::{thread, sync::Arc, sync::Mutex, sync::{atomic::{AtomicBool, Ordering}, mpsc::channel}, time::Duration, fs::File, io::Write, io::Read};
 use gtk::{prelude::*, traits::SettingsExt};
 use simplyscriptor2::*;
 
@@ -242,19 +242,16 @@ fn send_events(events: Arc<Mutex<Vec<Event>>>, run: Arc<AtomicBool>, infinite_lo
         for event in &events {
             // Running can be disabled while in the middle of running so we have to check if flag is still true
             if run.load(Ordering::Relaxed) {
-                send_event(&event.event_type);
-                let wait_duration = event.time.duration_since(last_time).unwrap();
+                let mut wait_duration = event.time.duration_since(last_time).unwrap();
                 last_time = event.time;
                 if delay.load(Ordering::Relaxed) {
-                    let now = SystemTime::now();
-                    let shorten_amount: u64 = 35;
-                    if wait_duration.as_micros() > shorten_amount.into() {
-                        spin_sleep::sleep(wait_duration - Duration::from_micros(shorten_amount));
-                    }
-                    println!("elapsed time: {:?} - wait_duration: {:?}", now.elapsed().unwrap(), wait_duration);
+                    // Shorten all durations by a small percentage to account for delay in other misc things
+                    wait_duration = wait_duration.mul_f64(0.98);
                 } else {
-                    spin_sleep::sleep(Duration::from_micros(50));
+                    wait_duration = Duration::from_micros(50);
                 }
+                spin_sleep::sleep(wait_duration);
+                send_event(&event.event_type);
             } else {
                 log("Running halted!");
                 infinite_loop.store(false, Ordering::Relaxed);
