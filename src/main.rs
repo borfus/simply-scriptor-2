@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"] // Prevents console window from appearing when running on windows
 
 use rdev::{simulate, SimulateError, Event, EventType, Key};
 use std::{thread, sync::Arc, sync::Mutex, sync::{atomic::{AtomicBool, Ordering}, mpsc::channel}, time::Duration, fs::File, io::Write, io::Read};
@@ -6,12 +6,14 @@ use gtk::{prelude::*, traits::SettingsExt};
 use simplyscriptor2::*;
 
 fn main() {
+    // Spawns main event listener that listens for rdev::Event structs
     let (sendch, recvch) = channel();
     spawn_event_listener(sendch);
 
+    // Main behavior flags, properties, and events vector
+    let events = Arc::new(Mutex::new(Vec::new()));
     let record = Arc::new(AtomicBool::new(false));
     let run = Arc::new(AtomicBool::new(false));
-    let events = Arc::new(Mutex::new(Vec::new()));
     let infinite_loop = Arc::new(AtomicBool::new(false));
     let loop_count = Arc::new(Mutex::new(1));
     let delay = Arc::new(AtomicBool::new(true));
@@ -48,20 +50,23 @@ fn main() {
         .application_id("com.borfus.simply-scriptor-2")
         .build();
 
+    // Main GTK loop
+    // Creating and modifying GObjects should only be done here as per GTK documentation recommendation
     app.connect_activate(move |app| {
+        // Build window, buttons, and labels from .glade file
         let glade_src = include_str!("../simply-scriptor-gui.glade");
         let builder = gtk::Builder::from_string(glade_src);
         let window : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
 
-        let record_button : gtk::Button = builder.object("button_record").expect("Couldn't get gtk object 'button_record'");
-        let record_ref = Arc::clone(&record);
-        let events_ref = Arc::clone(&events);
-        let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
-
+        // Moving variables for open_button click callback
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
-        let open_button : gtk::Button = builder.object("button_open").expect("Couldn't get gtk object 'button_open'.");
         let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
         let halt_actions_ref = Arc::clone(&halt_actions);
+        let record_ref = Arc::clone(&record);
+        let events_ref = Arc::clone(&events);
+
+        // Script loading
+        let open_button : gtk::Button = builder.object("button_open").expect("Couldn't get gtk object 'button_open'.");
         open_button.connect_clicked(move |_| {
             let dialog = gtk::FileChooserDialog::with_buttons(Some("Open Script"), Some(&window_ref), gtk::FileChooserAction::Open, &[("_Open", gtk::ResponseType::Accept), ("_Cancel", gtk::ResponseType::Cancel)]);
             let script_file_label_clone = script_file_label.clone();
@@ -103,11 +108,14 @@ fn main() {
             dialog.run();
         });
 
+        // Moving variables for save_button click callback
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
-        let save_button: gtk::Button = builder.object("button_save").expect("Couldn't get gtk object 'button_save'.");
         let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
         let events_ref = Arc::clone(&events);
         let halt_actions_ref = Arc::clone(&halt_actions);
+
+        // Save script
+        let save_button: gtk::Button = builder.object("button_save").expect("Couldn't get gtk object 'button_save'.");
         save_button.connect_clicked(move |_| {
             let dialog = gtk::FileChooserDialog::with_buttons(Some("Save Script"), Some(&window_ref), gtk::FileChooserAction::Save, &[("_Save", gtk::ResponseType::Accept), ("_Cancel", gtk::ResponseType::Cancel)]);
             let script_file_label_clone = script_file_label.clone();
@@ -165,12 +173,17 @@ fn main() {
             *loop_count_val = loop_count_button_val;
         });
 
+        // Moving variables for record_button click callback
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         let script_file_label: gtk::Label = builder.object("label_script_file").expect("Couldn't get gtk object 'label_script_file'.");
         let events_ref = Arc::clone(&events);
+        let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
+
+        // Record a new script
+        let record_button : gtk::Button = builder.object("button_record").expect("Couldn't get gtk object 'button_record'");
         record_button.connect_clicked(move |_| {
             if minimize.is_active() {
-                window_ref.iconify();
+                window_ref.iconify(); // "iconify" is GTK 3's term for minimizing a window
             }
 
             if !record_ref.load(Ordering::Relaxed) {
@@ -181,8 +194,11 @@ fn main() {
             }
         });
 
-        let stop_recording_button : gtk::Button = builder.object("button_stop_recording").expect("Couldn't get gtk object 'button_stop_recording'");
+        // Moving variables for stop_recording_button click callback
         let record_ref = Arc::clone(&record);
+
+        // Stop recording a script
+        let stop_recording_button : gtk::Button = builder.object("button_stop_recording").expect("Couldn't get gtk object 'button_stop_recording'");
         stop_recording_button.connect_clicked(move |_| {
             if record_ref.load(Ordering::Relaxed) {
                 log("Stopped recording...");
@@ -190,10 +206,13 @@ fn main() {
             }
         });
 
-        let run_button: gtk::Button = builder.object("button_run").expect("Couldn't get gtk object 'button_run'");
+        // Moving variables for run_button click callback
         let run_ref = Arc::clone(&run);
         let window_ref : gtk::Window = builder.object("window").expect("Couldn't get gtk object 'window'");
         let minimize : gtk::CheckButton = builder.object("checkbox_minimize").expect("Couldn't get gtk object 'checkbox_minimize'");
+
+        // Run a previously recorded script
+        let run_button: gtk::Button = builder.object("button_run").expect("Couldn't get gtk object 'button_run'");
         run_button.connect_clicked(move |_| {
             if minimize.is_active() {
                 window_ref.iconify();

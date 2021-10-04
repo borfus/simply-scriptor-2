@@ -2,9 +2,10 @@ use rdev::{listen, Event, EventType, simulate, SimulateError, Key};
 use std::{thread, sync::{mpsc::{Sender, Receiver}, Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::SystemTime};
 
 extern crate chrono;
-use chrono::offset::Utc;
-use chrono::DateTime;
+use chrono::{DateTime, offset::Utc};
 
+// Spawn new thread to listen for any keyboard or mouse input
+// Sends events through a tunnel that must be set up before calling this function
 pub fn spawn_event_listener(sendch: Sender<Event>) {
     let _listener = thread::spawn(move || {
         listen(move |event| {
@@ -15,6 +16,8 @@ pub fn spawn_event_listener(sendch: Sender<Event>) {
     });
 }
 
+// Listen for events from a tunnel sender and set appropriate flags for main program
+// Used to handle keyboard shortcuts for recording, stop recording, and running scripts
 pub fn spawn_event_receiver(
     recvch: Receiver<Event>,
     record: Arc<AtomicBool>,
@@ -59,6 +62,7 @@ pub fn spawn_event_receiver(
     });
 }
 
+// Simulate the previously recorded input keyboard/mouse input event
 pub fn send_event(event_type: &EventType) {
     match simulate(event_type) {
         Ok(()) => (),
@@ -68,14 +72,12 @@ pub fn send_event(event_type: &EventType) {
     }
 }
 
+pub fn log(message: &str) {
+    println!("{}: {}", get_time(), message);
+}
+
 fn get_time() -> String {
     let system_time = SystemTime::now();
     let datetime: DateTime<Utc> = system_time.into();
     format!("{}", datetime.format("%d/%m/%Y %T"))
 }
-
-
-pub fn log(message: &str) {
-    println!("{}: {}", get_time(), message);
-}
-
