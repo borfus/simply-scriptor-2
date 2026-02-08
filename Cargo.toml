@@ -29,7 +29,7 @@ codegen-units = 1
 panic = "abort"
 
 [package.metadata.bundle]
-name = "Simply Scriptor 2"
+name = "scribe"
 identifier = "com.borfus.simplyscriptor2"
 icon = [
     "resource/icons/simply-scriptor-32x32.ico",
