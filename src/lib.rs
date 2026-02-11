@@ -1,16 +1,25 @@
-use rdev::{listen, Event, EventType, simulate, SimulateError, Key};
-use std::{thread, sync::{mpsc::{Sender, Receiver}, Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::SystemTime};
+use rdev::{listen, simulate, Event, EventType, Key, SimulateError};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, Sender},
+        Arc, Mutex,
+    },
+    thread,
+    time::SystemTime,
+};
 
 extern crate chrono;
-use chrono::{DateTime, offset::Utc};
+use chrono::{offset::Utc, DateTime};
 
 // Spawn new thread to listen for any keyboard or mouse input
 // Sends events through a tunnel that must be set up before calling this function
 pub fn spawn_event_listener(sendch: Sender<Event>) {
     let _listener = thread::spawn(move || {
         listen(move |event| {
-            sendch.send(event)
-                  .unwrap_or_else(|e| log(format!("Could not send event {:?}", e).as_str()));
+            sendch
+                .send(event)
+                .unwrap_or_else(|e| log(format!("Could not send event {:?}", e).as_str()));
         })
         .expect("Could not listen");
     });
@@ -23,7 +32,7 @@ pub fn spawn_event_receiver(
     record: Arc<AtomicBool>,
     run: Arc<AtomicBool>,
     events: Arc<Mutex<Vec<Event>>>,
-    halt_actions: Arc<AtomicBool>
+    halt_actions: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         for event in recvch.iter() {
@@ -31,14 +40,17 @@ pub fn spawn_event_receiver(
                 continue;
             }
 
-            if event.event_type == EventType::KeyRelease(Key::Comma) && !record.load(Ordering::Relaxed) {
+            if event.event_type == EventType::KeyRelease(Key::Comma)
+                && !record.load(Ordering::Relaxed)
+            {
                 record.store(true, Ordering::Relaxed);
                 log("Recording...");
                 events.lock().unwrap().clear();
                 continue;
             }
 
-            if event.event_type == EventType::KeyRelease(Key::Dot) && record.load(Ordering::Relaxed) {
+            if event.event_type == EventType::KeyRelease(Key::Dot) && record.load(Ordering::Relaxed)
+            {
                 record.store(false, Ordering::Relaxed);
                 log("Stopped recording...");
                 continue;
@@ -64,10 +76,46 @@ pub fn spawn_event_receiver(
 
 // Simulate the previously recorded input keyboard/mouse input event
 pub fn send_event(event_type: &EventType) {
-    match simulate(event_type) {
-        Ok(()) => (),
-        Err(SimulateError) => {
-            eprintln!("Could not send event: {:?}", event_type);
+    // On macOS, mouse button events sometimes need special handling
+    #[cfg(target_os = "macos")]
+    {
+        match event_type {
+            EventType::ButtonPress(button) | EventType::ButtonRelease(button) => {
+                // For macOS, we need to make sure button events are sent properly
+                // Try simulating the event multiple times if it fails
+                for attempt in 0..3 {
+                    match simulate(event_type) {
+                        Ok(()) => return,
+                        Err(SimulateError) => {
+                            if attempt == 2 {
+                                eprintln!(
+                                    "Could not send button event after 3 attempts: {:?}",
+                                    event_type
+                                );
+                            } else {
+                                // Small delay before retry
+                                std::thread::sleep(std::time::Duration::from_micros(100));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => match simulate(event_type) {
+                Ok(()) => (),
+                Err(SimulateError) => {
+                    eprintln!("Could not send event: {:?}", event_type);
+                }
+            },
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        match simulate(event_type) {
+            Ok(()) => (),
+            Err(SimulateError) => {
+                eprintln!("Could not send event: {:?}", event_type);
+            }
         }
     }
 }
