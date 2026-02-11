@@ -1,4 +1,4 @@
-use rdev::{listen, simulate, Button, Event, EventType, Key, SimulateError};
+use rdev::{listen, simulate, Event, EventType, Key, SimulateError};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -12,17 +12,29 @@ use std::{
 extern crate chrono;
 use chrono::{offset::Utc, DateTime};
 
+#[cfg(target_os = "macos")]
+mod macos_events;
+
 // Spawn new thread to listen for any keyboard or mouse input
 // Sends events through a tunnel that must be set up before calling this function
 pub fn spawn_event_listener(sendch: Sender<Event>) {
-    let _listener = thread::spawn(move || {
-        listen(move |event| {
-            sendch
-                .send(event)
-                .unwrap_or_else(|e| log(format!("Could not send event {:?}", e).as_str()));
-        })
-        .expect("Could not listen");
-    });
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, use CGEventTap for reliable event capture
+        macos_events::start_macos_event_tap(sendch);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _listener = thread::spawn(move || {
+            listen(move |event| {
+                sendch
+                    .send(event)
+                    .unwrap_or_else(|e| log(format!("Could not send event {:?}", e).as_str()));
+            })
+            .expect("Could not listen");
+        });
+    }
 }
 
 // Listen for events from a tunnel sender and set appropriate flags for main program
@@ -36,18 +48,6 @@ pub fn spawn_event_receiver(
 ) {
     thread::spawn(move || {
         for event in recvch.iter() {
-            // Debug: Log all events on macOS to see what's being captured
-            #[cfg(target_os = "macos")]
-            {
-                match &event.event_type {
-                    EventType::ButtonPress(btn) => log(&format!("Captured ButtonPress: {:?}", btn)),
-                    EventType::ButtonRelease(btn) => {
-                        log(&format!("Captured ButtonRelease: {:?}", btn))
-                    }
-                    _ => {}
-                }
-            }
-
             if halt_actions.load(Ordering::Relaxed) {
                 continue;
             }
@@ -88,36 +88,11 @@ pub fn spawn_event_receiver(
 
 // Simulate the previously recorded input keyboard/mouse input event
 pub fn send_event(event_type: &EventType) {
-    // On macOS, mouse button events sometimes need special handling
     #[cfg(target_os = "macos")]
     {
-        match event_type {
-            EventType::ButtonPress(button) | EventType::ButtonRelease(button) => {
-                // For macOS, we need to make sure button events are sent properly
-                // Try simulating the event multiple times if it fails
-                for attempt in 0..3 {
-                    match simulate(event_type) {
-                        Ok(()) => return,
-                        Err(SimulateError) => {
-                            if attempt == 2 {
-                                eprintln!(
-                                    "Could not send button event after 3 attempts: {:?}",
-                                    event_type
-                                );
-                            } else {
-                                // Small delay before retry
-                                std::thread::sleep(std::time::Duration::from_micros(100));
-                            }
-                        }
-                    }
-                }
-            }
-            _ => match simulate(event_type) {
-                Ok(()) => (),
-                Err(SimulateError) => {
-                    eprintln!("Could not send event: {:?}", event_type);
-                }
-            },
+        // On macOS, use CGEvent for simulation
+        if let Err(e) = macos_events::simulate_macos_event(event_type) {
+            eprintln!("Could not send event on macOS: {} - {:?}", e, event_type);
         }
     }
 
@@ -141,4 +116,3 @@ fn get_time() -> String {
     let datetime: DateTime<Utc> = system_time.into();
     format!("{}", datetime.format("%d/%m/%Y %T"))
 }
-

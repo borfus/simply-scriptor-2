@@ -3165,6 +3165,8 @@ version = "0.3.0"
 dependencies = [
  "bincode",
  "chrono",
+ "core-foundation",
+ "core-graphics 0.23.2",
  "iced",
  "image",
  "once_cell",
