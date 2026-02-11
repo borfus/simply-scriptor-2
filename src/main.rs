@@ -3,7 +3,6 @@
 use iced::widget::{button, checkbox, column, container, row, text, text_input, Column};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription, Theme};
 use rdev::{simulate, Event, EventType, Key, SimulateError};
-use serde::{Deserialize, Serialize};
 use simplyscriptor2::*;
 use std::{
     fs::File,
@@ -16,87 +15,6 @@ use std::{
     thread,
     time::Duration,
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct RecordedEvent {
-    /// Microseconds since the start of recording (monotonic).
-    t_micros: u64,
-    kind: RecordedEventKind,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-enum RecordedEventKind {
-    KeyPress(u64),
-    KeyRelease(u64),
-    ButtonPress(u64),
-    ButtonRelease(u64),
-    MouseMove { x: f64, y: f64 },
-    Wheel { delta_x: i64, delta_y: i64 },
-}
-
-fn key_to_u64(k: Key) -> u64 {
-    k as u64
-}
-
-fn u64_to_key(v: u64) -> Key {
-    // SAFETY: `v` must come from `key_to_u64` using the same `rdev::Key` definition.
-    // If you change rdev versions, previously saved scripts may become incompatible.
-    unsafe {
-        match std::mem::size_of::<Key>() {
-            8 => std::mem::transmute::<u64, Key>(v),
-            4 => std::mem::transmute::<u32, Key>(v as u32),
-            2 => std::mem::transmute::<u16, Key>(v as u16),
-            1 => std::mem::transmute::<u8, Key>(v as u8),
-            _ => panic!("Unsupported Key size"),
-        }
-    }
-}
-
-fn button_to_u64(b: rdev::Button) -> u64 {
-    b as u64
-}
-
-fn u64_to_button(v: u64) -> rdev::Button {
-    // SAFETY: `v` must come from `button_to_u64` using the same `rdev::Button` definition.
-    unsafe {
-        match std::mem::size_of::<rdev::Button>() {
-            8 => std::mem::transmute::<u64, rdev::Button>(v),
-            4 => std::mem::transmute::<u32, rdev::Button>(v as u32),
-            2 => std::mem::transmute::<u16, rdev::Button>(v as u16),
-            1 => std::mem::transmute::<u8, rdev::Button>(v as u8),
-            _ => panic!("Unsupported Button size"),
-        }
-    }
-}
-
-fn recorded_kind_from_rdev(event_type: &EventType) -> Option<RecordedEventKind> {
-    match event_type {
-        EventType::KeyPress(k) => Some(RecordedEventKind::KeyPress(key_to_u64(*k))),
-        EventType::KeyRelease(k) => Some(RecordedEventKind::KeyRelease(key_to_u64(*k))),
-        EventType::ButtonPress(b) => Some(RecordedEventKind::ButtonPress(button_to_u64(*b))),
-        EventType::ButtonRelease(b) => Some(RecordedEventKind::ButtonRelease(button_to_u64(*b))),
-        EventType::MouseMove { x, y } => Some(RecordedEventKind::MouseMove { x: *x, y: *y }),
-        EventType::Wheel { delta_x, delta_y } => Some(RecordedEventKind::Wheel {
-            delta_x: *delta_x,
-            delta_y: *delta_y,
-        }),
-        _ => None, // Ignore unsupported event types
-    }
-}
-
-fn rdev_event_type_from_recorded(kind: &RecordedEventKind) -> EventType {
-    match kind {
-        RecordedEventKind::KeyPress(v) => EventType::KeyPress(u64_to_key(*v)),
-        RecordedEventKind::KeyRelease(v) => EventType::KeyRelease(u64_to_key(*v)),
-        RecordedEventKind::ButtonPress(v) => EventType::ButtonPress(u64_to_button(*v)),
-        RecordedEventKind::ButtonRelease(v) => EventType::ButtonRelease(u64_to_button(*v)),
-        RecordedEventKind::MouseMove { x, y } => EventType::MouseMove { x: *x, y: *y },
-        RecordedEventKind::Wheel { delta_x, delta_y } => EventType::Wheel {
-            delta_x: *delta_x,
-            delta_y: *delta_y,
-        },
-    }
-}
 
 fn load_icon() -> Option<iced::window::Icon> {
     let icon_bytes = include_bytes!("../resource/icons/simply-scriptor-no-line-256x256.png");
@@ -114,16 +32,72 @@ fn load_icon() -> Option<iced::window::Icon> {
     None
 }
 
+// Global channel for rdev events - needed for macOS compatibility
+static EVENT_SENDER: once_cell::sync::OnceCell<std::sync::mpsc::Sender<Event>> =
+    once_cell::sync::OnceCell::new();
+
 fn main() -> iced::Result {
+    // Set up the event channel before anything else
+    let (tx, rx) = std::sync::mpsc::channel();
+    EVENT_SENDER.set(tx).expect("Failed to set event sender");
+
     // Main behavior flags, properties, and events vector
-    let events: Arc<Mutex<Vec<RecordedEvent>>> = Arc::new(Mutex::new(Vec::new()));
-    let recording_start: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+    let events = Arc::new(Mutex::new(Vec::new()));
     let record = Arc::new(AtomicBool::new(false));
     let run = Arc::new(AtomicBool::new(false));
     let infinite_loop = Arc::new(AtomicBool::new(true));
     let loop_count = Arc::new(Mutex::new(1));
     let delay = Arc::new(AtomicBool::new(true));
     let halt_actions = Arc::new(AtomicBool::new(false));
+
+    // Clone for the event receiver thread
+    let record_clone = Arc::clone(&record);
+    let run_clone = Arc::clone(&run);
+    let events_clone = Arc::clone(&events);
+    let halt_actions_clone = Arc::clone(&halt_actions);
+
+    // Spawn event receiver thread that processes rdev events
+    thread::spawn(move || {
+        for event in rx.iter() {
+            if halt_actions_clone.load(Ordering::Relaxed) {
+                continue;
+            }
+
+            // Handle keyboard shortcuts
+            if event.event_type == EventType::KeyRelease(Key::Comma)
+                && !record_clone.load(Ordering::Relaxed)
+            {
+                record_clone.store(true, Ordering::Relaxed);
+                log("Recording...");
+                events_clone.lock().unwrap().clear();
+                continue;
+            }
+
+            if event.event_type == EventType::KeyRelease(Key::Dot)
+                && record_clone.load(Ordering::Relaxed)
+            {
+                record_clone.store(false, Ordering::Relaxed);
+                log("Stopped recording...");
+                continue;
+            }
+
+            if event.event_type == EventType::KeyRelease(Key::Slash) {
+                if !run_clone.load(Ordering::Relaxed) && !record_clone.load(Ordering::Relaxed) {
+                    log("Running...");
+                    run_clone.store(true, Ordering::Relaxed);
+                } else if run_clone.load(Ordering::Relaxed) {
+                    log("Stopped running...");
+                    run_clone.store(false, Ordering::Relaxed);
+                }
+                continue;
+            }
+
+            // Record events
+            if record_clone.load(Ordering::Relaxed) && !run_clone.load(Ordering::Relaxed) {
+                events_clone.lock().unwrap().push(event);
+            }
+        }
+    });
 
     let run_ref = Arc::clone(&run);
     let events_ref = Arc::clone(&events);
@@ -141,6 +115,29 @@ fn main() -> iced::Result {
         );
     });
 
+    // Start rdev listener in a separate thread (will work on Windows, might need adjustment for macOS)
+    #[cfg(not(target_os = "macos"))]
+    {
+        thread::spawn(|| {
+            if let Err(error) = rdev::listen(rdev_callback) {
+                eprintln!("rdev listen error: {:?}", error);
+            }
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, we need to start the listener before the iced main loop
+        // This is a workaround - spawn in background but it may still cause issues
+        thread::spawn(|| {
+            if let Err(error) = rdev::listen(rdev_callback) {
+                eprintln!("rdev listen error: {:?}", error);
+            }
+        });
+        // Give the listener thread time to start
+        thread::sleep(Duration::from_millis(100));
+    }
+
     ScriptorApp::run(Settings {
         window: iced::window::Settings {
             size: iced::Size::new(200.0, 270.0),
@@ -152,7 +149,6 @@ fn main() -> iced::Result {
         },
         flags: AppFlags {
             events,
-            recording_start,
             record,
             run,
             infinite_loop,
@@ -164,9 +160,16 @@ fn main() -> iced::Result {
     })
 }
 
+// Callback function for rdev events
+fn rdev_callback(event: Event) {
+    if let Some(sender) = EVENT_SENDER.get() {
+        let _ = sender.send(event);
+    }
+}
+
+#[derive(Default)]
 struct AppFlags {
-    events: Arc<Mutex<Vec<RecordedEvent>>>,
-    recording_start: Arc<Mutex<Option<std::time::Instant>>>,
+    events: Arc<Mutex<Vec<Event>>>,
     record: Arc<AtomicBool>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
@@ -176,8 +179,7 @@ struct AppFlags {
 }
 
 struct ScriptorApp {
-    events: Arc<Mutex<Vec<RecordedEvent>>>,
-    recording_start: Arc<Mutex<Option<std::time::Instant>>>,
+    events: Arc<Mutex<Vec<Event>>>,
     record: Arc<AtomicBool>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
@@ -209,13 +211,6 @@ enum Message {
     FileOpened(Option<std::path::PathBuf>),
     FileSaved(Option<std::path::PathBuf>),
     Tick,
-    RdevEvent(Event),
-}
-
-// Subscription state to keep the listener alive
-enum RdevListener {
-    Uninitialized,
-    Ready(tokio::sync::mpsc::UnboundedReceiver<Event>),
 }
 
 impl Application for ScriptorApp {
@@ -228,7 +223,6 @@ impl Application for ScriptorApp {
         (
             ScriptorApp {
                 events: flags.events,
-                recording_start: flags.recording_start,
                 record: flags.record,
                 run: flags.run,
                 infinite_loop: flags.infinite_loop,
@@ -253,79 +247,12 @@ impl Application for ScriptorApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::RdevEvent(event) => {
-                if self.halt_actions.load(Ordering::Relaxed) {
-                    return Command::none();
-                }
-
-                // Handle keyboard shortcuts
-                if event.event_type == EventType::KeyRelease(Key::Comma)
-                    && !self.record.load(Ordering::Relaxed)
-                {
-                    self.script_file_name = String::new();
-                    log("Recording...");
-                    self.record.store(true, Ordering::Relaxed);
-                    self.events.lock().unwrap().clear();
-                    *self.recording_start.lock().unwrap() = None;
-
-                    if self.minimize_on_action {
-                        return iced::window::minimize(iced::window::Id::MAIN, true);
-                    }
-                    return Command::none();
-                }
-
-                if event.event_type == EventType::KeyRelease(Key::Dot)
-                    && self.record.load(Ordering::Relaxed)
-                {
-                    log("Stopped recording...");
-                    self.record.store(false, Ordering::Relaxed);
-                    *self.recording_start.lock().unwrap() = None;
-                    return Command::none();
-                }
-
-                if event.event_type == EventType::KeyRelease(Key::Slash) {
-                    if !self.run.load(Ordering::Relaxed) && !self.record.load(Ordering::Relaxed) {
-                        log("Running...");
-                        self.run.store(true, Ordering::Relaxed);
-
-                        if self.minimize_on_action {
-                            return iced::window::minimize(iced::window::Id::MAIN, true);
-                        }
-                    } else if self.run.load(Ordering::Relaxed) {
-                        log("Stopped running...");
-                        self.run.store(false, Ordering::Relaxed);
-                    }
-                    return Command::none();
-                }
-
-                // Record events
-                if self.record.load(Ordering::Relaxed) && !self.run.load(Ordering::Relaxed) {
-                    if let Some(kind) = recorded_kind_from_rdev(&event.event_type) {
-                        let mut start_guard = self.recording_start.lock().unwrap();
-                        let t_micros = if let Some(start) = *start_guard {
-                            start.elapsed().as_micros() as u64
-                        } else {
-                            let now = std::time::Instant::now();
-                            *start_guard = Some(now);
-                            0
-                        };
-
-                        self.events
-                            .lock()
-                            .unwrap()
-                            .push(RecordedEvent { t_micros, kind });
-                    }
-                }
-
-                Command::none()
-            }
             Message::Record => {
                 if !self.record.load(Ordering::Relaxed) {
                     self.script_file_name = String::new();
                     log("Recording...");
                     self.record.store(true, Ordering::Relaxed);
                     self.events.lock().unwrap().clear();
-                    *self.recording_start.lock().unwrap() = None;
 
                     if self.minimize_on_action {
                         return iced::window::minimize(iced::window::Id::MAIN, true);
@@ -337,7 +264,6 @@ impl Application for ScriptorApp {
                 if self.record.load(Ordering::Relaxed) {
                     log("Stopped recording...");
                     self.record.store(false, Ordering::Relaxed);
-                    *self.recording_start.lock().unwrap() = None;
                 }
                 Command::none()
             }
@@ -382,7 +308,7 @@ impl Application for ScriptorApp {
                     let mut file = File::open(&path).unwrap();
                     let mut buffer = Vec::<u8>::new();
                     let _result = file.read_to_end(&mut buffer).unwrap();
-                    let decoded: Vec<RecordedEvent> = bincode::deserialize(&buffer[..]).unwrap();
+                    let decoded: Vec<rdev::Event> = bincode::deserialize(&buffer[..]).unwrap();
 
                     let mut events = self.events.lock().unwrap();
                     events.clear();
@@ -505,39 +431,6 @@ impl Application for ScriptorApp {
                 )
             }
         }
-    }
-
-    fn subscription(&self) -> Subscription<Message> {
-        iced::subscription::unfold(
-            "rdev-listener",
-            RdevListener::Uninitialized,
-            |state| async move {
-                let mut receiver = match state {
-                    RdevListener::Uninitialized => {
-                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-
-                        // Spawn the rdev listener ONCE
-                        std::thread::spawn(move || {
-                            if let Err(error) = rdev::listen(move |event| {
-                                let _ = tx.send(event);
-                            }) {
-                                eprintln!("rdev listen error: {:?}", error);
-                            }
-                        });
-
-                        rx
-                    }
-                    RdevListener::Ready(rx) => rx,
-                };
-
-                if let Some(event) = receiver.recv().await {
-                    (Message::RdevEvent(event), RdevListener::Ready(receiver))
-                } else {
-                    // Channel closed, this shouldn't happen but handle it gracefully
-                    std::future::pending().await
-                }
-            },
-        )
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -706,7 +599,7 @@ impl Application for ScriptorApp {
 }
 
 fn event_loop(
-    events: Arc<Mutex<Vec<RecordedEvent>>>,
+    events: Arc<Mutex<Vec<Event>>>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
     loop_count: Arc<Mutex<i32>>,
@@ -732,7 +625,7 @@ fn event_loop(
 }
 
 fn send_events(
-    events: Arc<Mutex<Vec<RecordedEvent>>>,
+    events: Arc<Mutex<Vec<Event>>>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
     loop_count: Arc<Mutex<i32>>,
@@ -749,6 +642,7 @@ fn send_events(
     let mut i = 0;
     while i < *loop_count {
         let start_time = std::time::Instant::now();
+        let recording_start = events[0].time;
 
         let mut halted = false;
         for event in &events {
@@ -759,7 +653,7 @@ fn send_events(
             }
 
             if delay.load(Ordering::Relaxed) {
-                let target_offset = Duration::from_micros(event.t_micros);
+                let target_offset = event.time.duration_since(recording_start).unwrap();
                 let current_offset = start_time.elapsed();
 
                 if target_offset > current_offset {
@@ -770,8 +664,7 @@ fn send_events(
                 spin_sleep::sleep(Duration::from_micros(50));
             }
 
-            let et = rdev_event_type_from_recorded(&event.kind);
-            send_event(&et);
+            send_event(&event.event_type);
         }
 
         if halted {
@@ -793,4 +686,3 @@ fn send_events(
     run.store(false, Ordering::Relaxed);
     log("Done");
 }
-

@@ -3104,6 +3104,7 @@ dependencies = [
  "chrono",
  "iced",
  "image",
+ "once_cell",
  "rdev",
  "rfd",
  "serde",
