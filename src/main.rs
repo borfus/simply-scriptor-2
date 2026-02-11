@@ -119,9 +119,25 @@ fn main() -> iced::Result {
     });
 
     // Start rdev listener in a separate thread
+    // On macOS, use grab() for better trackpad click detection
     thread::spawn(|| {
-        if let Err(error) = rdev::listen(rdev_callback) {
-            eprintln!("rdev listen error: {:?}", error);
+        #[cfg(target_os = "macos")]
+        {
+            if let Err(error) = rdev::grab(move |event| {
+                rdev_callback(event.clone());
+                // Return None to pass the event through to the system
+                // Return Some(event) to block the event
+                None
+            }) {
+                eprintln!("rdev grab error: {:?}", error);
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Err(error) = rdev::listen(rdev_callback) {
+                eprintln!("rdev listen error: {:?}", error);
+            }
         }
     });
 
