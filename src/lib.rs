@@ -15,6 +15,7 @@ extern crate chrono;
 use chrono::{offset::Utc, DateTime};
 
 #[cfg(target_os = "macos")]
+#[path = "macos_events.rs"]
 mod macos_events;
 
 // Spawn new thread to listen for any keyboard or mouse input

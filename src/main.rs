@@ -97,17 +97,6 @@ fn main() -> iced::Result {
 
             // Record events
             if record_clone.load(Ordering::Relaxed) && !run_clone.load(Ordering::Relaxed) {
-                // Debug: Log what we're recording
-                match &event.event_type {
-                    EventType::ButtonPress(btn) => eprintln!("RECORDING: ButtonPress {:?}", btn),
-                    EventType::ButtonRelease(btn) => {
-                        eprintln!("RECORDING: ButtonRelease {:?}", btn)
-                    }
-                    EventType::MouseMove { x, y } => {
-                        eprintln!("RECORDING: MouseMove ({}, {})", x, y)
-                    }
-                    _ => {}
-                }
                 events_clone.lock().unwrap().push(event);
             }
         }

@@ -18,8 +18,6 @@ use std::time::SystemTime;
 pub fn start_macos_event_tap(sender: Sender<Event>) {
     use std::thread;
 
-    eprintln!("Starting macOS event tap...");
-
     thread::spawn(move || {
         // Create event tap for all events
         let event_types = vec![
@@ -39,29 +37,12 @@ pub fn start_macos_event_tap(sender: Sender<Event>) {
 
         let sender_clone = sender.clone();
 
-        eprintln!("Creating CGEventTap...");
-
         match CGEventTap::new(
             CGEventTapLocation::HID,
             CGEventTapPlacement::HeadInsertEventTap,
             CGEventTapOptions::ListenOnly,
             event_types,
             move |_proxy, event_type, cg_event| {
-                // Debug: Log what CGEvents we're receiving
-                match event_type {
-                    CGEventType::LeftMouseDown => eprintln!("CGEvent: LeftMouseDown"),
-                    CGEventType::LeftMouseUp => eprintln!("CGEvent: LeftMouseUp"),
-                    CGEventType::LeftMouseDragged => {
-                        let loc = cg_event.location();
-                        eprintln!("CGEvent: LeftMouseDragged at ({}, {})", loc.x, loc.y);
-                    }
-                    CGEventType::MouseMoved => {
-                        let loc = cg_event.location();
-                        eprintln!("CGEvent: MouseMoved at ({}, {})", loc.x, loc.y);
-                    }
-                    _ => {}
-                }
-
                 if let Some(event) = convert_cg_event_to_rdev(event_type, &cg_event) {
                     let _ = sender_clone.send(event);
                 }
@@ -69,34 +50,18 @@ pub fn start_macos_event_tap(sender: Sender<Event>) {
                 Some(cg_event.clone())
             },
         ) {
-            Ok(tap) => {
-                eprintln!("CGEventTap created successfully!");
-                eprintln!("Adding to run loop...");
-
-                unsafe {
-                    let loop_source = tap.mach_port.create_runloop_source(0).unwrap();
-                    let current_loop = CFRunLoop::get_current();
-                    current_loop.add_source(&loop_source, kCFRunLoopCommonModes);
-                    tap.enable();
-
-                    eprintln!("Event tap enabled and running!");
-                    eprintln!(
-                        "If you don't see CGEvent messages, check Accessibility permissions!"
-                    );
-
-                    CFRunLoop::run_current();
-                }
-            }
-            Err(e) => {
+            Ok(tap) => unsafe {
+                let loop_source = tap.mach_port.create_runloop_source(0).unwrap();
+                let current_loop = CFRunLoop::get_current();
+                current_loop.add_source(&loop_source, kCFRunLoopCommonModes);
+                tap.enable();
+                CFRunLoop::run_current();
+            },
+            Err(_) => {
                 eprintln!("========================================");
-                eprintln!("CRITICAL ERROR: Failed to create CGEventTap!");
-                eprintln!("Error: {:?}", e);
-                eprintln!("========================================");
-                eprintln!("This usually means:");
-                eprintln!("1. The app doesn't have Accessibility permissions");
-                eprintln!("2. Go to: System Settings → Privacy & Security → Accessibility");
-                eprintln!("3. Make sure this app is in the list and ENABLED");
-                eprintln!("4. You may need to remove and re-add it");
+                eprintln!("ERROR: Failed to create event tap!");
+                eprintln!("Accessibility permissions required:");
+                eprintln!("System Settings → Privacy & Security → Accessibility");
                 eprintln!("========================================");
             }
         }
@@ -289,8 +254,6 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
             }
         }
         EventType::ButtonPress(button) => {
-            eprintln!("BUTTON PRESS: {:?}", button);
-
             // Get current mouse location to press at
             let current_location = CGEvent::new(source.clone())
                 .ok()
@@ -327,13 +290,10 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
                     .map_err(|_| "Failed to create mouse button press event")?;
             event.post(CGEventTapLocation::HID);
 
-            // CRITICAL: Add a tiny delay to ensure the system registers the button as down
-            // before we start sending drag events
+            // Small delay to ensure the system registers the button as down
             std::thread::sleep(std::time::Duration::from_micros(1000));
         }
         EventType::ButtonRelease(button) => {
-            eprintln!("BUTTON RELEASE: {:?}", button);
-
             // Get current mouse location to release at
             let current_location = CGEvent::new(source.clone())
                 .ok()
@@ -375,10 +335,7 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
 
             // Determine which event type to use based on button state
             if LEFT_BUTTON_DOWN.load(Ordering::Relaxed) {
-                // Debug logging
-                eprintln!("DRAG: Moving to ({}, {}) with left button down", x, y);
-
-                // For drag operations, we need to warp the cursor AND send the drag event
+                // For drag operations, warp cursor and send drag event
                 CGDisplay::warp_mouse_cursor_position(point)
                     .map_err(|_| "Failed to warp cursor during left drag")?;
 
@@ -392,8 +349,6 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
 
                 event.post(CGEventTapLocation::HID);
             } else if RIGHT_BUTTON_DOWN.load(Ordering::Relaxed) {
-                eprintln!("DRAG: Moving to ({}, {}) with right button down", x, y);
-
                 CGDisplay::warp_mouse_cursor_position(point)
                     .map_err(|_| "Failed to warp cursor during right drag")?;
 
@@ -407,8 +362,6 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
 
                 event.post(CGEventTapLocation::HID);
             } else if MIDDLE_BUTTON_DOWN.load(Ordering::Relaxed) {
-                eprintln!("DRAG: Moving to ({}, {}) with middle button down", x, y);
-
                 CGDisplay::warp_mouse_cursor_position(point)
                     .map_err(|_| "Failed to warp cursor during middle drag")?;
 
@@ -537,3 +490,4 @@ fn rdev_key_to_macos_keycode(key: &Key) -> Option<u16> {
     };
     Some(keycode)
 }
+
