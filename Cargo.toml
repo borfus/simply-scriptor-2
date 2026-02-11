@@ -1,6 +1,6 @@
 [package]
 name = "simplyscriptor2"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["borfus <mrpeteyb@gmail.com>"]
 edition = "2021"
 description = "Utility to create and run scripts that emulate keyboard and mouse input."
