@@ -309,6 +309,7 @@ impl From<SerializableEvent> for Event {
                 unicode: None,
                 platform_code: 0,
                 position_code: 0,
+                usb_hid: 0,
             }
         }
     }
