@@ -1,4 +1,6 @@
-use rdev::{listen, simulate, Event, EventType, Key, SimulateError};
+#[cfg(not(target_os = "macos"))]
+use rdev::{listen, simulate, SimulateError};
+use rdev::{Event, EventType, Key};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -116,3 +118,4 @@ fn get_time() -> String {
     let datetime: DateTime<Utc> = system_time.into();
     format!("{}", datetime.format("%d/%m/%Y %T"))
 }
+
