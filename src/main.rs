@@ -1,25 +1,30 @@
 #![windows_subsystem = "windows"]
 
+mod serializable_event;
+use serializable_event::SerializableEvent;
+
 use iced::widget::{button, checkbox, column, container, row, text, text_input, Column};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Theme};
-use rdev::{simulate, Event, EventType, Key, SimulateError};
+#[cfg(not(target_os = "macos"))]
+use rdev::simulate;
+#[cfg(not(target_os = "macos"))]
+use rdev::SimulateError;
+use rdev::{Event, EventType, Key};
+
 use simplyscriptor2::*;
 use std::{
     fs::File,
     io::Read,
     io::Write,
-    sync::Arc,
-    sync::Mutex,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::channel,
+        Arc, Mutex,
     },
     thread,
     time::Duration,
 };
 
 fn load_icon() -> Option<iced::window::Icon> {
-    // Embed the icon directly into the binary at compile time
     let icon_bytes = include_bytes!("../resource/icons/simply-scriptor-no-line-256x256.png");
 
     if let Ok(img) = image::load_from_memory(icon_bytes) {
@@ -36,9 +41,8 @@ fn load_icon() -> Option<iced::window::Icon> {
 }
 
 fn main() -> iced::Result {
-    // Spawns main event listener that listens for rdev::Event structs
-    let (sendch, recvch) = channel();
-    spawn_event_listener(sendch);
+    // Set up the event channel before anything else
+    let (tx, rx) = std::sync::mpsc::channel::<Event>();
 
     // Main behavior flags, properties, and events vector
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -49,11 +53,54 @@ fn main() -> iced::Result {
     let delay = Arc::new(AtomicBool::new(true));
     let halt_actions = Arc::new(AtomicBool::new(false));
 
-    let record_ref = Arc::clone(&record);
-    let run_ref = Arc::clone(&run);
-    let events_ref = Arc::clone(&events);
-    let halt_actions_ref = Arc::clone(&halt_actions);
-    spawn_event_receiver(recvch, record_ref, run_ref, events_ref, halt_actions_ref);
+    // Clone for the event receiver thread
+    let record_clone = Arc::clone(&record);
+    let run_clone = Arc::clone(&run);
+    let events_clone = Arc::clone(&events);
+    let halt_actions_clone = Arc::clone(&halt_actions);
+
+    // Spawn event receiver thread that processes rdev events
+    thread::spawn(move || {
+        for event in rx.iter() {
+            if halt_actions_clone.load(Ordering::Relaxed) {
+                continue;
+            }
+
+            // Handle keyboard shortcuts
+            if event.event_type == EventType::KeyRelease(Key::Comma)
+                && !record_clone.load(Ordering::Relaxed)
+            {
+                record_clone.store(true, Ordering::Relaxed);
+                log("Recording...");
+                events_clone.lock().unwrap().clear();
+                continue;
+            }
+
+            if event.event_type == EventType::KeyRelease(Key::Dot)
+                && record_clone.load(Ordering::Relaxed)
+            {
+                record_clone.store(false, Ordering::Relaxed);
+                log("Stopped recording...");
+                continue;
+            }
+
+            if event.event_type == EventType::KeyRelease(Key::Slash) {
+                if !run_clone.load(Ordering::Relaxed) && !record_clone.load(Ordering::Relaxed) {
+                    log("Running...");
+                    run_clone.store(true, Ordering::Relaxed);
+                } else if run_clone.load(Ordering::Relaxed) {
+                    log("Stopped running...");
+                    run_clone.store(false, Ordering::Relaxed);
+                }
+                continue;
+            }
+
+            // Record events
+            if record_clone.load(Ordering::Relaxed) && !run_clone.load(Ordering::Relaxed) {
+                events_clone.lock().unwrap().push(event);
+            }
+        }
+    });
 
     let run_ref = Arc::clone(&run);
     let events_ref = Arc::clone(&events);
@@ -70,6 +117,9 @@ fn main() -> iced::Result {
             delay_ref,
         );
     });
+
+    // Start event listener - platform specific
+    spawn_event_listener(tx);
 
     ScriptorApp::run(Settings {
         window: iced::window::Settings {
@@ -231,21 +281,39 @@ impl Application for ScriptorApp {
                 if let Some(path) = path {
                     self.halt_actions.store(true, Ordering::Relaxed);
 
-                    let mut file = File::open(&path).unwrap();
-                    let mut buffer = Vec::<u8>::new();
-                    let _result = file.read_to_end(&mut buffer).unwrap();
-                    let decoded: Vec<rdev::Event> = bincode::deserialize(&buffer[..]).unwrap();
+                    match File::open(&path) {
+                        Ok(mut file) => {
+                            let mut buffer = Vec::<u8>::new();
+                            if file.read_to_end(&mut buffer).is_ok() {
+                                // Deserialize as SerializableEvent and convert to Event
+                                if let Ok(decoded) =
+                                    bincode::deserialize::<Vec<SerializableEvent>>(&buffer)
+                                {
+                                    let events_converted: Vec<Event> =
+                                        decoded.into_iter().map(|e| e.into()).collect();
 
-                    let mut events = self.events.lock().unwrap();
-                    events.clear();
-                    *events = decoded.to_vec();
+                                    let mut events = self.events.lock().unwrap();
+                                    events.clear();
+                                    *events = events_converted;
 
-                    let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+                                    let file_name =
+                                        path.file_name().unwrap().to_str().unwrap().to_string();
 
-                    if file_name.len() > 12 {
-                        self.script_file_name = format!("{}...", &file_name[0..12]);
-                    } else {
-                        self.script_file_name = file_name;
+                                    if file_name.len() > 12 {
+                                        self.script_file_name = format!("{}...", &file_name[0..12]);
+                                    } else {
+                                        self.script_file_name = file_name;
+                                    }
+                                } else {
+                                    log("Error: Could not deserialize file");
+                                }
+                            } else {
+                                log("Error: Could not read file");
+                            }
+                        }
+                        Err(e) => {
+                            log(&format!("Error opening file: {}", e));
+                        }
                     }
 
                     self.halt_actions.store(false, Ordering::Relaxed);
@@ -256,22 +324,34 @@ impl Application for ScriptorApp {
                 if let Some(mut path) = path {
                     self.halt_actions.store(true, Ordering::Relaxed);
 
-                    // Add .bin extension if not present
                     if path.extension().is_none() {
                         path.set_extension("bin");
                     }
 
-                    let mut file = File::create(&path).unwrap();
-                    let events = self.events.lock().unwrap();
-                    let encoded: Vec<u8> = bincode::serialize(&*events).unwrap();
-                    let _result = file.write_all(&encoded);
+                    match File::create(&path) {
+                        Ok(mut file) => {
+                            let events = self.events.lock().unwrap();
+                            let serializable: Vec<SerializableEvent> =
+                                events.iter().map(|e| e.clone().into()).collect();
+                            let encoded: Vec<u8> = bincode::serialize(&serializable).unwrap();
 
-                    let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+                            if file.write_all(&encoded).is_ok() {
+                                let file_name =
+                                    path.file_name().unwrap().to_str().unwrap().to_string();
 
-                    if file_name.len() > 12 {
-                        self.script_file_name = format!("{}...", &file_name[0..12]);
-                    } else {
-                        self.script_file_name = file_name;
+                                if file_name.len() > 12 {
+                                    self.script_file_name = format!("{}...", &file_name[0..12]);
+                                } else {
+                                    self.script_file_name = file_name;
+                                }
+                                log("File saved successfully");
+                            } else {
+                                log("Error: Could not write to file");
+                            }
+                        }
+                        Err(e) => {
+                            log(&format!("Error creating file: {}", e));
+                        }
                     }
 
                     self.halt_actions.store(false, Ordering::Relaxed);
@@ -312,7 +392,6 @@ impl Application for ScriptorApp {
                 let is_recording = self.record.load(Ordering::Relaxed);
                 let is_running = self.run.load(Ordering::Relaxed);
 
-                // If recording just started and minimize is enabled
                 if is_recording && !self.was_recording && self.minimize_on_action {
                     self.script_file_name = String::new();
                     self.was_recording = is_recording;
@@ -329,7 +408,6 @@ impl Application for ScriptorApp {
                     ]);
                 }
 
-                // If running just started and minimize is enabled
                 if is_running && !self.was_running && self.minimize_on_action {
                     self.was_recording = is_recording;
                     self.was_running = is_running;
@@ -345,7 +423,6 @@ impl Application for ScriptorApp {
                     ]);
                 }
 
-                // If recording just started (clear filename)
                 if is_recording && !self.was_recording {
                     self.script_file_name = String::new();
                 }
@@ -382,6 +459,7 @@ impl Application for ScriptorApp {
         .on_press(Message::Open)
         .width(Length::Fixed(184.0))
         .padding(6);
+
         let save_button = button(
             text("Save")
                 .size(12)
@@ -466,6 +544,7 @@ impl Application for ScriptorApp {
         .on_press(Message::Record)
         .width(Length::Fixed(184.0))
         .padding(6);
+
         let stop_button = button(
             text("Stop Recording [ . ]")
                 .size(12)
@@ -474,6 +553,7 @@ impl Application for ScriptorApp {
         .on_press(Message::StopRecording)
         .width(Length::Fixed(184.0))
         .padding(6);
+
         let run_button = button(
             text("Run [ / ]")
                 .size(12)
@@ -601,12 +681,15 @@ fn send_events(
             break;
         }
 
-        match simulate(&EventType::KeyRelease(Key::Dot)) {
-            Ok(()) => (),
-            Err(SimulateError) => {
-                eprintln!("Could not send final release key.");
-            }
-        };
+        #[cfg(not(target_os = "macos"))]
+        {
+            match simulate(&EventType::KeyRelease(Key::Dot)) {
+                Ok(()) => (),
+                Err(SimulateError) => {
+                    eprintln!("Could not send final release key.");
+                }
+            };
+        }
 
         if !infinite_loop.load(Ordering::Relaxed) {
             i += 1;

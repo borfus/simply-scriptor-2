@@ -1,19 +1,43 @@
-use rdev::{listen, Event, EventType, simulate, SimulateError, Key};
-use std::{thread, sync::{mpsc::{Sender, Receiver}, Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::SystemTime};
+#[cfg(not(target_os = "macos"))]
+use rdev::{listen, simulate, SimulateError};
+use rdev::{Event, EventType, Key};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, Sender},
+        Arc, Mutex,
+    },
+    thread,
+    time::SystemTime,
+};
 
 extern crate chrono;
-use chrono::{DateTime, offset::Utc};
+use chrono::{offset::Utc, DateTime};
+
+#[cfg(target_os = "macos")]
+#[path = "macos_events.rs"]
+mod macos_events;
 
 // Spawn new thread to listen for any keyboard or mouse input
 // Sends events through a tunnel that must be set up before calling this function
 pub fn spawn_event_listener(sendch: Sender<Event>) {
-    let _listener = thread::spawn(move || {
-        listen(move |event| {
-            sendch.send(event)
-                  .unwrap_or_else(|e| log(format!("Could not send event {:?}", e).as_str()));
-        })
-        .expect("Could not listen");
-    });
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, use CGEventTap for reliable event capture
+        macos_events::start_macos_event_tap(sendch);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _listener = thread::spawn(move || {
+            listen(move |event| {
+                sendch
+                    .send(event)
+                    .unwrap_or_else(|e| log(format!("Could not send event {:?}", e).as_str()));
+            })
+            .expect("Could not listen");
+        });
+    }
 }
 
 // Listen for events from a tunnel sender and set appropriate flags for main program
@@ -23,7 +47,7 @@ pub fn spawn_event_receiver(
     record: Arc<AtomicBool>,
     run: Arc<AtomicBool>,
     events: Arc<Mutex<Vec<Event>>>,
-    halt_actions: Arc<AtomicBool>
+    halt_actions: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         for event in recvch.iter() {
@@ -31,14 +55,17 @@ pub fn spawn_event_receiver(
                 continue;
             }
 
-            if event.event_type == EventType::KeyRelease(Key::Comma) && !record.load(Ordering::Relaxed) {
+            if event.event_type == EventType::KeyRelease(Key::Comma)
+                && !record.load(Ordering::Relaxed)
+            {
                 record.store(true, Ordering::Relaxed);
                 log("Recording...");
                 events.lock().unwrap().clear();
                 continue;
             }
 
-            if event.event_type == EventType::KeyRelease(Key::Dot) && record.load(Ordering::Relaxed) {
+            if event.event_type == EventType::KeyRelease(Key::Dot) && record.load(Ordering::Relaxed)
+            {
                 record.store(false, Ordering::Relaxed);
                 log("Stopped recording...");
                 continue;
@@ -56,6 +83,17 @@ pub fn spawn_event_receiver(
             }
 
             if record.load(Ordering::Relaxed) && !run.load(Ordering::Relaxed) {
+                // Debug: Log what we're recording
+                match &event.event_type {
+                    EventType::ButtonPress(btn) => eprintln!("RECORDING: ButtonPress {:?}", btn),
+                    EventType::ButtonRelease(btn) => {
+                        eprintln!("RECORDING: ButtonRelease {:?}", btn)
+                    }
+                    EventType::MouseMove { x, y } => {
+                        eprintln!("RECORDING: MouseMove ({}, {})", x, y)
+                    }
+                    _ => {}
+                }
                 events.lock().unwrap().push(event);
             }
         }
@@ -64,10 +102,21 @@ pub fn spawn_event_receiver(
 
 // Simulate the previously recorded input keyboard/mouse input event
 pub fn send_event(event_type: &EventType) {
-    match simulate(event_type) {
-        Ok(()) => (),
-        Err(SimulateError) => {
-            eprintln!("Could not send event: {:?}", event_type);
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, use CGEvent for simulation
+        if let Err(e) = macos_events::simulate_macos_event(event_type) {
+            eprintln!("Could not send event on macOS: {} - {:?}", e, event_type);
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        match simulate(event_type) {
+            Ok(()) => (),
+            Err(SimulateError) => {
+                eprintln!("Could not send event: {:?}", event_type);
+            }
         }
     }
 }
