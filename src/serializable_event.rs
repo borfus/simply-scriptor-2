@@ -288,14 +288,28 @@ impl From<Button> for SerializableButton {
 // Convert from serializable types back to rdev types
 impl From<SerializableEvent> for Event {
     fn from(event: SerializableEvent) -> Self {
-        Event {
-            time: event.time,
-            event_type: event.event_type.into(),
-            unicode: None,
-            platform_code: 0,
-            position_code: 0,
-            extra_data: 0,
-            usb_hid: 0,
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            Event {
+                time: event.time,
+                event_type: event.event_type.into(),
+                unicode: None,
+                platform_code: 0,
+                position_code: 0,
+                extra_data: 0,
+                usb_hid: 0,
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            Event {
+                time: event.time,
+                event_type: event.event_type.into(),
+                unicode: None,
+                platform_code: 0,
+                position_code: 0,
+            }
         }
     }
 }
