@@ -1,25 +1,22 @@
 #![windows_subsystem = "windows"]
 
 use iced::widget::{button, checkbox, column, container, row, text, text_input, Column};
-use iced::{Alignment, Application, Command, Element, Length, Settings, Theme};
+use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription, Theme};
 use rdev::{simulate, Event, EventType, Key, SimulateError};
 use simplyscriptor2::*;
 use std::{
     fs::File,
     io::Read,
     io::Write,
-    sync::Arc,
-    sync::Mutex,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::channel,
+        Arc, Mutex,
     },
     thread,
     time::Duration,
 };
 
 fn load_icon() -> Option<iced::window::Icon> {
-    // Embed the icon directly into the binary at compile time
     let icon_bytes = include_bytes!("../resource/icons/simply-scriptor-no-line-256x256.png");
 
     if let Ok(img) = image::load_from_memory(icon_bytes) {
@@ -36,10 +33,6 @@ fn load_icon() -> Option<iced::window::Icon> {
 }
 
 fn main() -> iced::Result {
-    // Spawns main event listener that listens for rdev::Event structs
-    let (sendch, recvch) = channel();
-    spawn_event_listener(sendch);
-
     // Main behavior flags, properties, and events vector
     let events = Arc::new(Mutex::new(Vec::new()));
     let record = Arc::new(AtomicBool::new(false));
@@ -48,12 +41,6 @@ fn main() -> iced::Result {
     let loop_count = Arc::new(Mutex::new(1));
     let delay = Arc::new(AtomicBool::new(true));
     let halt_actions = Arc::new(AtomicBool::new(false));
-
-    let record_ref = Arc::clone(&record);
-    let run_ref = Arc::clone(&run);
-    let events_ref = Arc::clone(&events);
-    let halt_actions_ref = Arc::clone(&halt_actions);
-    spawn_event_receiver(recvch, record_ref, run_ref, events_ref, halt_actions_ref);
 
     let run_ref = Arc::clone(&run);
     let events_ref = Arc::clone(&events);
@@ -137,6 +124,13 @@ enum Message {
     FileOpened(Option<std::path::PathBuf>),
     FileSaved(Option<std::path::PathBuf>),
     Tick,
+    RdevEvent(Event),
+}
+
+// Subscription state to keep the listener alive
+enum RdevListener {
+    Uninitialized,
+    Ready(tokio::sync::mpsc::UnboundedReceiver<Event>),
 }
 
 impl Application for ScriptorApp {
@@ -173,6 +167,56 @@ impl Application for ScriptorApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            Message::RdevEvent(event) => {
+                if self.halt_actions.load(Ordering::Relaxed) {
+                    return Command::none();
+                }
+
+                // Handle keyboard shortcuts
+                if event.event_type == EventType::KeyRelease(Key::Comma)
+                    && !self.record.load(Ordering::Relaxed)
+                {
+                    self.script_file_name = String::new();
+                    log("Recording...");
+                    self.record.store(true, Ordering::Relaxed);
+                    self.events.lock().unwrap().clear();
+
+                    if self.minimize_on_action {
+                        return iced::window::minimize(iced::window::Id::MAIN, true);
+                    }
+                    return Command::none();
+                }
+
+                if event.event_type == EventType::KeyRelease(Key::Dot)
+                    && self.record.load(Ordering::Relaxed)
+                {
+                    log("Stopped recording...");
+                    self.record.store(false, Ordering::Relaxed);
+                    return Command::none();
+                }
+
+                if event.event_type == EventType::KeyRelease(Key::Slash) {
+                    if !self.run.load(Ordering::Relaxed) && !self.record.load(Ordering::Relaxed) {
+                        log("Running...");
+                        self.run.store(true, Ordering::Relaxed);
+
+                        if self.minimize_on_action {
+                            return iced::window::minimize(iced::window::Id::MAIN, true);
+                        }
+                    } else if self.run.load(Ordering::Relaxed) {
+                        log("Stopped running...");
+                        self.run.store(false, Ordering::Relaxed);
+                    }
+                    return Command::none();
+                }
+
+                // Record events
+                if self.record.load(Ordering::Relaxed) && !self.run.load(Ordering::Relaxed) {
+                    self.events.lock().unwrap().push(event);
+                }
+
+                Command::none()
+            }
             Message::Record => {
                 if !self.record.load(Ordering::Relaxed) {
                     self.script_file_name = String::new();
@@ -256,7 +300,6 @@ impl Application for ScriptorApp {
                 if let Some(mut path) = path {
                     self.halt_actions.store(true, Ordering::Relaxed);
 
-                    // Add .bin extension if not present
                     if path.extension().is_none() {
                         path.set_extension("bin");
                     }
@@ -312,7 +355,6 @@ impl Application for ScriptorApp {
                 let is_recording = self.record.load(Ordering::Relaxed);
                 let is_running = self.run.load(Ordering::Relaxed);
 
-                // If recording just started and minimize is enabled
                 if is_recording && !self.was_recording && self.minimize_on_action {
                     self.script_file_name = String::new();
                     self.was_recording = is_recording;
@@ -329,7 +371,6 @@ impl Application for ScriptorApp {
                     ]);
                 }
 
-                // If running just started and minimize is enabled
                 if is_running && !self.was_running && self.minimize_on_action {
                     self.was_recording = is_recording;
                     self.was_running = is_running;
@@ -345,7 +386,6 @@ impl Application for ScriptorApp {
                     ]);
                 }
 
-                // If recording just started (clear filename)
                 if is_recording && !self.was_recording {
                     self.script_file_name = String::new();
                 }
@@ -361,6 +401,39 @@ impl Application for ScriptorApp {
                 )
             }
         }
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        iced::subscription::unfold(
+            "rdev-listener",
+            RdevListener::Uninitialized,
+            |state| async move {
+                let mut receiver = match state {
+                    RdevListener::Uninitialized => {
+                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+                        // Spawn the rdev listener ONCE
+                        std::thread::spawn(move || {
+                            if let Err(error) = rdev::listen(move |event| {
+                                let _ = tx.send(event);
+                            }) {
+                                eprintln!("rdev listen error: {:?}", error);
+                            }
+                        });
+
+                        rx
+                    }
+                    RdevListener::Ready(rx) => rx,
+                };
+
+                if let Some(event) = receiver.recv().await {
+                    (Message::RdevEvent(event), RdevListener::Ready(receiver))
+                } else {
+                    // Channel closed, this shouldn't happen but handle it gracefully
+                    std::future::pending().await
+                }
+            },
+        )
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -616,3 +689,4 @@ fn send_events(
     run.store(false, Ordering::Relaxed);
     log("Done");
 }
+
