@@ -1,4 +1,4 @@
-use rdev::{listen, simulate, Event, EventType, Key, SimulateError};
+use rdev::{listen, simulate, Button, Event, EventType, Key, SimulateError};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -80,7 +80,7 @@ pub fn send_event(event_type: &EventType) {
     #[cfg(target_os = "macos")]
     {
         match event_type {
-            EventType::ButtonPress(_button) | EventType::ButtonRelease(_button) => {
+            EventType::ButtonPress(button) | EventType::ButtonRelease(button) => {
                 // For macOS, we need to make sure button events are sent properly
                 // Try simulating the event multiple times if it fails
                 for attempt in 0..3 {
@@ -129,3 +129,4 @@ fn get_time() -> String {
     let datetime: DateTime<Utc> = system_time.into();
     format!("{}", datetime.format("%d/%m/%Y %T"))
 }
+
