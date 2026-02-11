@@ -3,6 +3,7 @@
 use iced::widget::{button, checkbox, column, container, row, text, text_input, Column};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription, Theme};
 use rdev::{simulate, Event, EventType, Key, SimulateError};
+use serde::{Deserialize, Serialize};
 use simplyscriptor2::*;
 use std::{
     fs::File,
@@ -15,6 +16,87 @@ use std::{
     thread,
     time::Duration,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecordedEvent {
+    /// Microseconds since the start of recording (monotonic).
+    t_micros: u64,
+    kind: RecordedEventKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum RecordedEventKind {
+    KeyPress(u64),
+    KeyRelease(u64),
+    ButtonPress(u64),
+    ButtonRelease(u64),
+    MouseMove { x: f64, y: f64 },
+    Wheel { delta_x: i64, delta_y: i64 },
+}
+
+fn key_to_u64(k: Key) -> u64 {
+    k as u64
+}
+
+fn u64_to_key(v: u64) -> Key {
+    // SAFETY: `v` must come from `key_to_u64` using the same `rdev::Key` definition.
+    // If you change rdev versions, previously saved scripts may become incompatible.
+    unsafe {
+        match std::mem::size_of::<Key>() {
+            8 => std::mem::transmute::<u64, Key>(v),
+            4 => std::mem::transmute::<u32, Key>(v as u32),
+            2 => std::mem::transmute::<u16, Key>(v as u16),
+            1 => std::mem::transmute::<u8, Key>(v as u8),
+            _ => panic!("Unsupported Key size"),
+        }
+    }
+}
+
+fn button_to_u64(b: rdev::Button) -> u64 {
+    b as u64
+}
+
+fn u64_to_button(v: u64) -> rdev::Button {
+    // SAFETY: `v` must come from `button_to_u64` using the same `rdev::Button` definition.
+    unsafe {
+        match std::mem::size_of::<rdev::Button>() {
+            8 => std::mem::transmute::<u64, rdev::Button>(v),
+            4 => std::mem::transmute::<u32, rdev::Button>(v as u32),
+            2 => std::mem::transmute::<u16, rdev::Button>(v as u16),
+            1 => std::mem::transmute::<u8, rdev::Button>(v as u8),
+            _ => panic!("Unsupported Button size"),
+        }
+    }
+}
+
+fn recorded_kind_from_rdev(event_type: &EventType) -> Option<RecordedEventKind> {
+    match event_type {
+        EventType::KeyPress(k) => Some(RecordedEventKind::KeyPress(key_to_u64(*k))),
+        EventType::KeyRelease(k) => Some(RecordedEventKind::KeyRelease(key_to_u64(*k))),
+        EventType::ButtonPress(b) => Some(RecordedEventKind::ButtonPress(button_to_u64(*b))),
+        EventType::ButtonRelease(b) => Some(RecordedEventKind::ButtonRelease(button_to_u64(*b))),
+        EventType::MouseMove { x, y } => Some(RecordedEventKind::MouseMove { x: *x, y: *y }),
+        EventType::Wheel { delta_x, delta_y } => Some(RecordedEventKind::Wheel {
+            delta_x: *delta_x,
+            delta_y: *delta_y,
+        }),
+        _ => None, // Ignore unsupported event types
+    }
+}
+
+fn rdev_event_type_from_recorded(kind: &RecordedEventKind) -> EventType {
+    match kind {
+        RecordedEventKind::KeyPress(v) => EventType::KeyPress(u64_to_key(*v)),
+        RecordedEventKind::KeyRelease(v) => EventType::KeyRelease(u64_to_key(*v)),
+        RecordedEventKind::ButtonPress(v) => EventType::ButtonPress(u64_to_button(*v)),
+        RecordedEventKind::ButtonRelease(v) => EventType::ButtonRelease(u64_to_button(*v)),
+        RecordedEventKind::MouseMove { x, y } => EventType::MouseMove { x: *x, y: *y },
+        RecordedEventKind::Wheel { delta_x, delta_y } => EventType::Wheel {
+            delta_x: *delta_x,
+            delta_y: *delta_y,
+        },
+    }
+}
 
 fn load_icon() -> Option<iced::window::Icon> {
     let icon_bytes = include_bytes!("../resource/icons/simply-scriptor-no-line-256x256.png");
@@ -34,7 +116,8 @@ fn load_icon() -> Option<iced::window::Icon> {
 
 fn main() -> iced::Result {
     // Main behavior flags, properties, and events vector
-    let events = Arc::new(Mutex::new(Vec::new()));
+    let events: Arc<Mutex<Vec<RecordedEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let recording_start: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
     let record = Arc::new(AtomicBool::new(false));
     let run = Arc::new(AtomicBool::new(false));
     let infinite_loop = Arc::new(AtomicBool::new(true));
@@ -69,6 +152,7 @@ fn main() -> iced::Result {
         },
         flags: AppFlags {
             events,
+            recording_start,
             record,
             run,
             infinite_loop,
@@ -80,9 +164,9 @@ fn main() -> iced::Result {
     })
 }
 
-#[derive(Default)]
 struct AppFlags {
-    events: Arc<Mutex<Vec<Event>>>,
+    events: Arc<Mutex<Vec<RecordedEvent>>>,
+    recording_start: Arc<Mutex<Option<std::time::Instant>>>,
     record: Arc<AtomicBool>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
@@ -92,7 +176,8 @@ struct AppFlags {
 }
 
 struct ScriptorApp {
-    events: Arc<Mutex<Vec<Event>>>,
+    events: Arc<Mutex<Vec<RecordedEvent>>>,
+    recording_start: Arc<Mutex<Option<std::time::Instant>>>,
     record: Arc<AtomicBool>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
@@ -143,6 +228,7 @@ impl Application for ScriptorApp {
         (
             ScriptorApp {
                 events: flags.events,
+                recording_start: flags.recording_start,
                 record: flags.record,
                 run: flags.run,
                 infinite_loop: flags.infinite_loop,
@@ -180,6 +266,7 @@ impl Application for ScriptorApp {
                     log("Recording...");
                     self.record.store(true, Ordering::Relaxed);
                     self.events.lock().unwrap().clear();
+                    *self.recording_start.lock().unwrap() = None;
 
                     if self.minimize_on_action {
                         return iced::window::minimize(iced::window::Id::MAIN, true);
@@ -192,6 +279,7 @@ impl Application for ScriptorApp {
                 {
                     log("Stopped recording...");
                     self.record.store(false, Ordering::Relaxed);
+                    *self.recording_start.lock().unwrap() = None;
                     return Command::none();
                 }
 
@@ -212,7 +300,21 @@ impl Application for ScriptorApp {
 
                 // Record events
                 if self.record.load(Ordering::Relaxed) && !self.run.load(Ordering::Relaxed) {
-                    self.events.lock().unwrap().push(event);
+                    if let Some(kind) = recorded_kind_from_rdev(&event.event_type) {
+                        let mut start_guard = self.recording_start.lock().unwrap();
+                        let t_micros = if let Some(start) = *start_guard {
+                            start.elapsed().as_micros() as u64
+                        } else {
+                            let now = std::time::Instant::now();
+                            *start_guard = Some(now);
+                            0
+                        };
+
+                        self.events
+                            .lock()
+                            .unwrap()
+                            .push(RecordedEvent { t_micros, kind });
+                    }
                 }
 
                 Command::none()
@@ -223,6 +325,7 @@ impl Application for ScriptorApp {
                     log("Recording...");
                     self.record.store(true, Ordering::Relaxed);
                     self.events.lock().unwrap().clear();
+                    *self.recording_start.lock().unwrap() = None;
 
                     if self.minimize_on_action {
                         return iced::window::minimize(iced::window::Id::MAIN, true);
@@ -234,6 +337,7 @@ impl Application for ScriptorApp {
                 if self.record.load(Ordering::Relaxed) {
                     log("Stopped recording...");
                     self.record.store(false, Ordering::Relaxed);
+                    *self.recording_start.lock().unwrap() = None;
                 }
                 Command::none()
             }
@@ -278,7 +382,7 @@ impl Application for ScriptorApp {
                     let mut file = File::open(&path).unwrap();
                     let mut buffer = Vec::<u8>::new();
                     let _result = file.read_to_end(&mut buffer).unwrap();
-                    let decoded: Vec<rdev::Event> = bincode::deserialize(&buffer[..]).unwrap();
+                    let decoded: Vec<RecordedEvent> = bincode::deserialize(&buffer[..]).unwrap();
 
                     let mut events = self.events.lock().unwrap();
                     events.clear();
@@ -602,7 +706,7 @@ impl Application for ScriptorApp {
 }
 
 fn event_loop(
-    events: Arc<Mutex<Vec<Event>>>,
+    events: Arc<Mutex<Vec<RecordedEvent>>>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
     loop_count: Arc<Mutex<i32>>,
@@ -628,7 +732,7 @@ fn event_loop(
 }
 
 fn send_events(
-    events: Arc<Mutex<Vec<Event>>>,
+    events: Arc<Mutex<Vec<RecordedEvent>>>,
     run: Arc<AtomicBool>,
     infinite_loop: Arc<AtomicBool>,
     loop_count: Arc<Mutex<i32>>,
@@ -645,7 +749,6 @@ fn send_events(
     let mut i = 0;
     while i < *loop_count {
         let start_time = std::time::Instant::now();
-        let recording_start = events[0].time;
 
         let mut halted = false;
         for event in &events {
@@ -656,7 +759,7 @@ fn send_events(
             }
 
             if delay.load(Ordering::Relaxed) {
-                let target_offset = event.time.duration_since(recording_start).unwrap();
+                let target_offset = Duration::from_micros(event.t_micros);
                 let current_offset = start_time.elapsed();
 
                 if target_offset > current_offset {
@@ -667,7 +770,8 @@ fn send_events(
                 spin_sleep::sleep(Duration::from_micros(50));
             }
 
-            send_event(&event.event_type);
+            let et = rdev_event_type_from_recorded(&event.kind);
+            send_event(&et);
         }
 
         if halted {
