@@ -1,23 +1,20 @@
 #[cfg(target_os = "macos")]
-use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
-#[cfg(target_os = "macos")]
-use core_graphics::event::{
-    CGEvent, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
-    EventField,
-};
+use core_graphics::event::{CGEvent, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType, EventField};
 #[cfg(target_os = "macos")]
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 #[cfg(target_os = "macos")]
-use rdev::{Button, Event, EventType, Key};
+use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
 #[cfg(target_os = "macos")]
 use std::sync::mpsc::Sender;
+#[cfg(target_os = "macos")]
+use rdev::{Event, EventType, Key, Button};
 #[cfg(target_os = "macos")]
 use std::time::SystemTime;
 
 #[cfg(target_os = "macos")]
 pub fn start_macos_event_tap(sender: Sender<Event>) {
     use std::thread;
-
+    
     thread::spawn(move || {
         // Create event tap for all events
         let event_types = vec![
@@ -36,7 +33,7 @@ pub fn start_macos_event_tap(sender: Sender<Event>) {
         ];
 
         let sender_clone = sender.clone();
-
+        
         match CGEventTap::new(
             CGEventTapLocation::HID,
             CGEventTapPlacement::HeadInsertEventTap,
@@ -50,13 +47,15 @@ pub fn start_macos_event_tap(sender: Sender<Event>) {
                 Some(cg_event.clone())
             },
         ) {
-            Ok(tap) => unsafe {
-                let loop_source = tap.mach_port.create_runloop_source(0).unwrap();
-                let current_loop = CFRunLoop::get_current();
-                current_loop.add_source(&loop_source, kCFRunLoopCommonModes);
-                tap.enable();
-                CFRunLoop::run_current();
-            },
+            Ok(tap) => {
+                unsafe {
+                    let loop_source = tap.mach_port.create_runloop_source(0).unwrap();
+                    let current_loop = CFRunLoop::get_current();
+                    current_loop.add_source(&loop_source, kCFRunLoopCommonModes);
+                    tap.enable();
+                    CFRunLoop::run_current();
+                }
+            }
             Err(e) => {
                 eprintln!("Failed to create CGEventTap: {:?}", e);
                 eprintln!("Make sure the app has Accessibility permissions in System Settings!");
@@ -68,17 +67,42 @@ pub fn start_macos_event_tap(sender: Sender<Event>) {
 #[cfg(target_os = "macos")]
 fn convert_cg_event_to_rdev(event_type: CGEventType, cg_event: &CGEvent) -> Option<Event> {
     let time = SystemTime::now();
-
+    
     let event_type = match event_type {
-        CGEventType::LeftMouseDown => EventType::ButtonPress(Button::Left),
-        CGEventType::LeftMouseUp => EventType::ButtonRelease(Button::Left),
-        CGEventType::RightMouseDown => EventType::ButtonPress(Button::Right),
-        CGEventType::RightMouseUp => EventType::ButtonRelease(Button::Right),
-        CGEventType::OtherMouseDown => EventType::ButtonPress(Button::Middle),
-        CGEventType::OtherMouseUp => EventType::ButtonRelease(Button::Middle),
-        CGEventType::MouseMoved
-        | CGEventType::LeftMouseDragged
-        | CGEventType::RightMouseDragged => {
+        CGEventType::LeftMouseDown => {
+            EventType::ButtonPress(Button::Left)
+        }
+        CGEventType::LeftMouseUp => {
+            EventType::ButtonRelease(Button::Left)
+        }
+        CGEventType::RightMouseDown => {
+            EventType::ButtonPress(Button::Right)
+        }
+        CGEventType::RightMouseUp => {
+            EventType::ButtonRelease(Button::Right)
+        }
+        CGEventType::OtherMouseDown => {
+            EventType::ButtonPress(Button::Middle)
+        }
+        CGEventType::OtherMouseUp => {
+            EventType::ButtonRelease(Button::Middle)
+        }
+        CGEventType::MouseMoved => {
+            let location = cg_event.location();
+            EventType::MouseMove {
+                x: location.x,
+                y: location.y,
+            }
+        }
+        CGEventType::LeftMouseDragged => {
+            let location = cg_event.location();
+            // Keep it as a drag event - we'll handle this specially during playback
+            EventType::MouseMove {
+                x: location.x,
+                y: location.y,
+            }
+        }
+        CGEventType::RightMouseDragged => {
             let location = cg_event.location();
             EventType::MouseMove {
                 x: location.x,
@@ -86,11 +110,12 @@ fn convert_cg_event_to_rdev(event_type: CGEventType, cg_event: &CGEvent) -> Opti
             }
         }
         CGEventType::ScrollWheel => {
-            let delta_y =
-                cg_event.get_integer_value_field(EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_1);
-            let delta_x =
-                cg_event.get_integer_value_field(EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_2);
-            EventType::Wheel { delta_x, delta_y }
+            let delta_y = cg_event.get_integer_value_field(EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_1);
+            let delta_x = cg_event.get_integer_value_field(EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_2);
+            EventType::Wheel {
+                delta_x,
+                delta_y,
+            }
         }
         CGEventType::KeyDown => {
             let keycode = cg_event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
@@ -227,25 +252,13 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
         }
         EventType::ButtonPress(button) => {
             let (event_type, mouse_button) = match button {
-                Button::Left => (
-                    CGEventType::LeftMouseDown,
-                    core_graphics::event::CGMouseButton::Left,
-                ),
-                Button::Right => (
-                    CGEventType::RightMouseDown,
-                    core_graphics::event::CGMouseButton::Right,
-                ),
-                Button::Middle => (
-                    CGEventType::OtherMouseDown,
-                    core_graphics::event::CGMouseButton::Center,
-                ),
+                Button::Left => (CGEventType::LeftMouseDown, core_graphics::event::CGMouseButton::Left),
+                Button::Right => (CGEventType::RightMouseDown, core_graphics::event::CGMouseButton::Right),
+                Button::Middle => (CGEventType::OtherMouseDown, core_graphics::event::CGMouseButton::Center),
                 _ => return Err("Unknown button".to_string()),
             };
-
-            if let Some(location) = CGEvent::new(source.clone())
-                .ok()
-                .and_then(|e| Some(e.location()))
-            {
+            
+            if let Some(location) = CGEvent::new(source.clone()).ok().and_then(|e| Some(e.location())) {
                 let event = CGEvent::new_mouse_event(source, event_type, location, mouse_button)
                     .map_err(|_| "Failed to create mouse button press event")?;
                 event.post(CGEventTapLocation::HID);
@@ -253,25 +266,13 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
         }
         EventType::ButtonRelease(button) => {
             let (event_type, mouse_button) = match button {
-                Button::Left => (
-                    CGEventType::LeftMouseUp,
-                    core_graphics::event::CGMouseButton::Left,
-                ),
-                Button::Right => (
-                    CGEventType::RightMouseUp,
-                    core_graphics::event::CGMouseButton::Right,
-                ),
-                Button::Middle => (
-                    CGEventType::OtherMouseUp,
-                    core_graphics::event::CGMouseButton::Center,
-                ),
+                Button::Left => (CGEventType::LeftMouseUp, core_graphics::event::CGMouseButton::Left),
+                Button::Right => (CGEventType::RightMouseUp, core_graphics::event::CGMouseButton::Right),
+                Button::Middle => (CGEventType::OtherMouseUp, core_graphics::event::CGMouseButton::Center),
                 _ => return Err("Unknown button".to_string()),
             };
-
-            if let Some(location) = CGEvent::new(source.clone())
-                .ok()
-                .and_then(|e| Some(e.location()))
-            {
+            
+            if let Some(location) = CGEvent::new(source.clone()).ok().and_then(|e| Some(e.location())) {
                 let event = CGEvent::new_mouse_event(source, event_type, location, mouse_button)
                     .map_err(|_| "Failed to create mouse button release event")?;
                 event.post(CGEventTapLocation::HID);
@@ -279,6 +280,7 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
         }
         EventType::MouseMove { x, y } => {
             let point = core_graphics::geometry::CGPoint::new(*x, *y);
+            // Use MouseMoved - the system will automatically use drag events if a button is down
             let event = CGEvent::new_mouse_event(
                 source,
                 CGEventType::MouseMoved,
@@ -290,7 +292,8 @@ pub fn simulate_macos_event(event_type: &EventType) -> Result<(), String> {
         }
         EventType::Wheel { delta_x, delta_y } => {
             // Create a scroll wheel event manually since new_scroll_event doesn't exist
-            let event = CGEvent::new(source).map_err(|_| "Failed to create scroll event")?;
+            let event = CGEvent::new(source)
+                .map_err(|_| "Failed to create scroll event")?;
             event.set_type(CGEventType::ScrollWheel);
             event.set_integer_value_field(EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_1, *delta_y);
             event.set_integer_value_field(EventField::SCROLL_WHEEL_EVENT_DELTA_AXIS_2, *delta_x);
