@@ -1,7 +1,10 @@
 #![windows_subsystem = "windows"]
 
+mod serializable_event;
+use serializable_event::SerializableEvent;
+
 use iced::widget::{button, checkbox, column, container, row, text, text_input, Column};
-use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription, Theme};
+use iced::{Alignment, Application, Command, Element, Length, Settings, Theme};
 use rdev::{simulate, Event, EventType, Key, SimulateError};
 use simplyscriptor2::*;
 use std::{
@@ -32,7 +35,7 @@ fn load_icon() -> Option<iced::window::Icon> {
     None
 }
 
-// Global channel for rdev events - needed for macOS compatibility
+// Global channel for rdev events
 static EVENT_SENDER: once_cell::sync::OnceCell<std::sync::mpsc::Sender<Event>> =
     once_cell::sync::OnceCell::new();
 
@@ -115,28 +118,12 @@ fn main() -> iced::Result {
         );
     });
 
-    // Start rdev listener in a separate thread (will work on Windows, might need adjustment for macOS)
-    #[cfg(not(target_os = "macos"))]
-    {
-        thread::spawn(|| {
-            if let Err(error) = rdev::listen(rdev_callback) {
-                eprintln!("rdev listen error: {:?}", error);
-            }
-        });
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        // On macOS, we need to start the listener before the iced main loop
-        // This is a workaround - spawn in background but it may still cause issues
-        thread::spawn(|| {
-            if let Err(error) = rdev::listen(rdev_callback) {
-                eprintln!("rdev listen error: {:?}", error);
-            }
-        });
-        // Give the listener thread time to start
-        thread::sleep(Duration::from_millis(100));
-    }
+    // Start rdev listener in a separate thread
+    thread::spawn(|| {
+        if let Err(error) = rdev::listen(rdev_callback) {
+            eprintln!("rdev listen error: {:?}", error);
+        }
+    });
 
     ScriptorApp::run(Settings {
         window: iced::window::Settings {
@@ -305,21 +292,39 @@ impl Application for ScriptorApp {
                 if let Some(path) = path {
                     self.halt_actions.store(true, Ordering::Relaxed);
 
-                    let mut file = File::open(&path).unwrap();
-                    let mut buffer = Vec::<u8>::new();
-                    let _result = file.read_to_end(&mut buffer).unwrap();
-                    let decoded: Vec<rdev::Event> = bincode::deserialize(&buffer[..]).unwrap();
+                    match File::open(&path) {
+                        Ok(mut file) => {
+                            let mut buffer = Vec::<u8>::new();
+                            if file.read_to_end(&mut buffer).is_ok() {
+                                // Deserialize as SerializableEvent and convert to Event
+                                if let Ok(decoded) =
+                                    bincode::deserialize::<Vec<SerializableEvent>>(&buffer)
+                                {
+                                    let events_converted: Vec<Event> =
+                                        decoded.into_iter().map(|e| e.into()).collect();
 
-                    let mut events = self.events.lock().unwrap();
-                    events.clear();
-                    *events = decoded.to_vec();
+                                    let mut events = self.events.lock().unwrap();
+                                    events.clear();
+                                    *events = events_converted;
 
-                    let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+                                    let file_name =
+                                        path.file_name().unwrap().to_str().unwrap().to_string();
 
-                    if file_name.len() > 12 {
-                        self.script_file_name = format!("{}...", &file_name[0..12]);
-                    } else {
-                        self.script_file_name = file_name;
+                                    if file_name.len() > 12 {
+                                        self.script_file_name = format!("{}...", &file_name[0..12]);
+                                    } else {
+                                        self.script_file_name = file_name;
+                                    }
+                                } else {
+                                    log("Error: Could not deserialize file");
+                                }
+                            } else {
+                                log("Error: Could not read file");
+                            }
+                        }
+                        Err(e) => {
+                            log(&format!("Error opening file: {}", e));
+                        }
                     }
 
                     self.halt_actions.store(false, Ordering::Relaxed);
@@ -334,17 +339,30 @@ impl Application for ScriptorApp {
                         path.set_extension("bin");
                     }
 
-                    let mut file = File::create(&path).unwrap();
-                    let events = self.events.lock().unwrap();
-                    let encoded: Vec<u8> = bincode::serialize(&*events).unwrap();
-                    let _result = file.write_all(&encoded);
+                    match File::create(&path) {
+                        Ok(mut file) => {
+                            let events = self.events.lock().unwrap();
+                            let serializable: Vec<SerializableEvent> =
+                                events.iter().map(|e| e.clone().into()).collect();
+                            let encoded: Vec<u8> = bincode::serialize(&serializable).unwrap();
 
-                    let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+                            if file.write_all(&encoded).is_ok() {
+                                let file_name =
+                                    path.file_name().unwrap().to_str().unwrap().to_string();
 
-                    if file_name.len() > 12 {
-                        self.script_file_name = format!("{}...", &file_name[0..12]);
-                    } else {
-                        self.script_file_name = file_name;
+                                if file_name.len() > 12 {
+                                    self.script_file_name = format!("{}...", &file_name[0..12]);
+                                } else {
+                                    self.script_file_name = file_name;
+                                }
+                                log("File saved successfully");
+                            } else {
+                                log("Error: Could not write to file");
+                            }
+                        }
+                        Err(e) => {
+                            log(&format!("Error creating file: {}", e));
+                        }
                     }
 
                     self.halt_actions.store(false, Ordering::Relaxed);
