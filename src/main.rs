@@ -5,7 +5,12 @@ use serializable_event::SerializableEvent;
 
 use iced::widget::{button, checkbox, column, container, row, text, text_input, Column};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Theme};
-use rdev::{simulate, Event, EventType, Key, SimulateError};
+#[cfg(not(target_os = "macos"))]
+use rdev::simulate;
+#[cfg(not(target_os = "macos"))]
+use rdev::SimulateError;
+use rdev::{Event, EventType, Key};
+
 use simplyscriptor2::*;
 use std::{
     fs::File,
@@ -35,14 +40,9 @@ fn load_icon() -> Option<iced::window::Icon> {
     None
 }
 
-// Global channel for rdev events
-static EVENT_SENDER: once_cell::sync::OnceCell<std::sync::mpsc::Sender<Event>> =
-    once_cell::sync::OnceCell::new();
-
 fn main() -> iced::Result {
     // Set up the event channel before anything else
-    let (tx, rx) = std::sync::mpsc::channel();
-    EVENT_SENDER.set(tx).expect("Failed to set event sender");
+    let (tx, rx) = std::sync::mpsc::channel::<Event>();
 
     // Main behavior flags, properties, and events vector
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -97,6 +97,17 @@ fn main() -> iced::Result {
 
             // Record events
             if record_clone.load(Ordering::Relaxed) && !run_clone.load(Ordering::Relaxed) {
+                // Debug: Log what we're recording
+                match &event.event_type {
+                    EventType::ButtonPress(btn) => eprintln!("RECORDING: ButtonPress {:?}", btn),
+                    EventType::ButtonRelease(btn) => {
+                        eprintln!("RECORDING: ButtonRelease {:?}", btn)
+                    }
+                    EventType::MouseMove { x, y } => {
+                        eprintln!("RECORDING: MouseMove ({}, {})", x, y)
+                    }
+                    _ => {}
+                }
                 events_clone.lock().unwrap().push(event);
             }
         }
@@ -118,12 +129,8 @@ fn main() -> iced::Result {
         );
     });
 
-    // Start rdev listener in a separate thread
-    thread::spawn(|| {
-        if let Err(error) = rdev::listen(rdev_callback) {
-            eprintln!("rdev listen error: {:?}", error);
-        }
-    });
+    // Start event listener - platform specific
+    spawn_event_listener(tx);
 
     ScriptorApp::run(Settings {
         window: iced::window::Settings {
@@ -145,13 +152,6 @@ fn main() -> iced::Result {
         },
         ..Settings::default()
     })
-}
-
-// Callback function for rdev events
-fn rdev_callback(event: Event) {
-    if let Some(sender) = EVENT_SENDER.get() {
-        let _ = sender.send(event);
-    }
 }
 
 #[derive(Default)]
@@ -470,6 +470,7 @@ impl Application for ScriptorApp {
         .on_press(Message::Open)
         .width(Length::Fixed(184.0))
         .padding(6);
+
         let save_button = button(
             text("Save")
                 .size(12)
@@ -554,6 +555,7 @@ impl Application for ScriptorApp {
         .on_press(Message::Record)
         .width(Length::Fixed(184.0))
         .padding(6);
+
         let stop_button = button(
             text("Stop Recording [ . ]")
                 .size(12)
@@ -562,6 +564,7 @@ impl Application for ScriptorApp {
         .on_press(Message::StopRecording)
         .width(Length::Fixed(184.0))
         .padding(6);
+
         let run_button = button(
             text("Run [ / ]")
                 .size(12)
@@ -689,12 +692,15 @@ fn send_events(
             break;
         }
 
-        match simulate(&EventType::KeyRelease(Key::Dot)) {
-            Ok(()) => (),
-            Err(SimulateError) => {
-                eprintln!("Could not send final release key.");
-            }
-        };
+        #[cfg(not(target_os = "macos"))]
+        {
+            match simulate(&EventType::KeyRelease(Key::Dot)) {
+                Ok(()) => (),
+                Err(SimulateError) => {
+                    eprintln!("Could not send final release key.");
+                }
+            };
+        }
 
         if !infinite_loop.load(Ordering::Relaxed) {
             i += 1;
@@ -704,4 +710,3 @@ fn send_events(
     run.store(false, Ordering::Relaxed);
     log("Done");
 }
-
